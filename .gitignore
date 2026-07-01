@@ -1,0 +1,16 @@
+# Игнорируем чувствительные файлы с токенами и кэшем
+accounts.json
+quotas.json
+.env
+
+# Игнорируем отладочные файлы
+debug_*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
