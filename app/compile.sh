@@ -2,7 +2,7 @@
 set -e
 
 # Пути к папкам проекта
-PROJECT_DIR="/Users/daniilchugunnikov/Desktop/work/gemini_limits_widget"
+PROJECT_DIR="/Users/daniilchugunnikov/Desktop/work/gemini_limits_widget_v2"
 APP_DIR="$PROJECT_DIR/app"
 BUILD_DIR="$PROJECT_DIR/build"
 APP_BUNDLE="$BUILD_DIR/GeminiLimits.app"

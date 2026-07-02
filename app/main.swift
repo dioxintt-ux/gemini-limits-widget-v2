@@ -280,6 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Кэш путей к логам для оптимизации CPU
     var cachedLogPaths: [String] = []
     var lastScanTime: TimeInterval = 0
+    var lastBrainMtime: TimeInterval = 0
     
     // Время последнего запроса квот через fetcher.py
     var lastQuotaUpdateTime: TimeInterval = 0
@@ -427,12 +428,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Чтение состояния диалогов из transcript.jsonl
     func scanDialogues() -> (active: Int, waiting: Int) {
         let now = Date().timeIntervalSince1970
+        let brainPattern = NSHomeDirectory() + "/.gemini/antigravity-ide/brain"
+        let currentBrainMtime = (try? FileManager.default.attributesOfItem(atPath: brainPattern)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
         
-        // Обновляем список путей к логам раз в 10 секунд
-        if now - lastScanTime > 10.0 || cachedLogPaths.isEmpty {
+        // Обновляем список путей к логам, только если изменилась папка brain (создан новый диалог) или раз в 10 секунд для надежности
+        if currentBrainMtime != lastBrainMtime || now - lastScanTime > 10.0 || cachedLogPaths.isEmpty {
+            lastBrainMtime = currentBrainMtime
             lastScanTime = now
             var tempPaths: [String] = []
-            let brainPattern = NSHomeDirectory() + "/.gemini/antigravity-ide/brain"
             if FileManager.default.fileExists(atPath: brainPattern) {
                 let brainURL = URL(fileURLWithPath: brainPattern)
                 if let enumerator = FileManager.default.enumerator(at: brainURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsSubdirectoryDescendants, .skipsHiddenFiles], errorHandler: nil) {
@@ -461,8 +464,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let mtime = mdate.timeIntervalSince1970
             let timeDiff = now - mtime
             
-            // Если лог не обновлялся 35 секунд — считаем диалог неактивным
-            if timeDiff > 35 {
+            // Если лог не обновлялся 300 секунд (5 минут) — считаем диалог неактивным.
+            // При завершении диалога (финальный ответ модели) он перейдет в неактивный статус мгновенно ниже.
+            if timeDiff > 300.0 {
                 continue
             }
             
