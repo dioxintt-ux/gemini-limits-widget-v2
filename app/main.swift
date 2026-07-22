@@ -21,6 +21,7 @@ extension NSColor {
 class StatusBarLoaderView: NSView {
     var radarRadius: CGFloat = 3.0
     var isActive = false
+    var remainingPercent: Int? = nil
     
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 24, height: 22))
@@ -33,8 +34,19 @@ class StatusBarLoaderView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         
-        // В активном состоянии красим лоудер в фирменный зеленый Apple (#30D158), в неактивном - в стандартный цвет текста
-        let color = isActive ? NSColor(hex: "#30D158") : NSColor.controlTextColor
+        // Определяем цвет иконки в зависимости от оставшихся лимитов
+        let color: NSColor
+        if let pct = remainingPercent {
+            if pct < 5 {
+                color = NSColor(hex: "#FF3B30") // Apple Red
+            } else if pct < 20 {
+                color = NSColor(hex: "#FFCC00") // Apple Yellow
+            } else {
+                color = isActive ? NSColor(hex: "#30D158") : NSColor.controlTextColor
+            }
+        } else {
+            color = isActive ? NSColor(hex: "#30D158") : NSColor.controlTextColor
+        }
         
         // Статический внешний круг вокруг центральной точки (крупнее и четче)
         let staticRadius: CGFloat = 8.0
@@ -73,6 +85,9 @@ class StatusBarLoaderView: NSView {
 
 // Класс для выравнивания заголовков по левому краю вровень с лимитами
 class MenuHeaderView: NSView {
+    override var allowsVibrancy: Bool {
+        return true
+    }
     let iconView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
     
@@ -125,6 +140,9 @@ class MenuHeaderView: NSView {
 
 // Кастомный графический прогресс-бар в стиле Apple
 class QuotaProgressView: NSView {
+    override var allowsVibrancy: Bool {
+        return true
+    }
     let iconView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
     let percentLabel = NSTextField(labelWithString: "")
@@ -232,7 +250,7 @@ class QuotaProgressView: NSView {
         // Отрисовка подложки (трека)
         let trackRect = NSRect(x: 145, y: barY, width: barWidth, height: 6)
         let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: 3, yRadius: 3)
-        NSColor.labelColor.withAlphaComponent(0.08).set()
+        NSColor.quaternaryLabelColor.set()
         trackPath.fill()
         
         // Отрисовка заполненной части прогресс-бара
@@ -371,19 +389,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             newStatus = .idle
         }
         
-        let statusChanged = (newStatus != currentStatus)
         currentStatus = newStatus
-        
-        if statusChanged || currentStatus != .active {
-            updateStatusBarIcon()
-        }
+        updateStatusBarIcon()
         
         rebuildMenu()
     }
     
     func updateStatusBarIcon() {
+        let minPercent = getActiveAccountMinLimitPercent()
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.loaderView.remainingPercent = minPercent
+            
             switch self.currentStatus {
             case .idle:
                 self.spinner.isHidden = true
@@ -417,12 +434,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Переводим лоудер в активное состояние (радар "оживает")
                 self.loaderView.isActive = true
                 self.loaderView.isHidden = false
+                self.loaderView.needsDisplay = true
                 
                 self.statusItem.length = 24
                 self.statusItem.button?.title = ""
                 self.statusItem.button?.image = nil
             }
         }
+    }
+    
+    func getActiveAccountMinLimitPercent() -> Int? {
+        let quotas = loadQuotas()
+        let accounts = loadAccounts()
+        guard let activeEmail = getActiveEmail(accounts: accounts) else { return nil }
+        
+        if let activeQuota = quotas.first(where: { $0.email.lowercased() == activeEmail.lowercased() }) {
+            if activeQuota.status == "ok", let limits5h = activeQuota.limits5h {
+                return limits5h.usedPercent
+            }
+        }
+        return nil
     }
     
     // Чтение состояния диалогов из transcript.jsonl
@@ -741,9 +772,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var validCount = 0
         
         for q in quotas {
-            if q.status == "ok" {
-                let weeklyPercent = q.limitsWeekly?.usedPercent ?? 0
-                var fiveHourPercent = q.limits5h?.usedPercent ?? 0
+            if q.status == "ok", let w = q.limitsWeekly, let h5 = q.limits5h {
+                let weeklyPercent = w.usedPercent
+                var fiveHourPercent = h5.usedPercent
                 if weeklyPercent < 10 {
                     fiveHourPercent = 0
                 }
@@ -857,11 +888,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var timeRemWeekly = ""
             
             if let h5 = q.limits5h {
-                let desc = weeklyPercent < 10 ? "Недельный лимит исчерпан" : h5.description
+                let desc = weeklyPercent < 10 ? "Недельный лимит исчерпан" : (h5.usedPercent < 100 ? h5.description : "")
                 timeRem5h = formatTimeRemaining(desc)
             }
             if let weekly = q.limitsWeekly {
-                timeRemWeekly = formatTimeRemaining(weekly.description)
+                let desc = weekly.usedPercent < 100 ? weekly.description : ""
+                timeRemWeekly = formatTimeRemaining(desc)
             }
             
             if let h5 = q.limits5h {

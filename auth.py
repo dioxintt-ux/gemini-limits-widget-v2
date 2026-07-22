@@ -147,7 +147,13 @@ def get_google_tokens(client_id, client_secret):
     userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo"
     headers = {"Authorization": f"Bearer {access_token}"}
     userinfo_resp = requests.get(userinfo_url, headers=headers)
+    if userinfo_resp.status_code != 200:
+        print(f"Ошибка получения информации о пользователе: {userinfo_resp.status_code} - {userinfo_resp.text}")
+        sys.exit(1)
     email = userinfo_resp.json().get("email", "unknown")
+    if email == "unknown" or "@" not in email:
+        print(f"Ошибка: Не удалось определить корректный email из профиля Google (получено: {email}).")
+        sys.exit(1)
     
     # Запоминаем, какой секрет сработал, чтобы сохранить его для fetcher.py
     used_secret = payload["client_secret"]
@@ -297,8 +303,10 @@ def try_import_local_token():
                     if response.status_code == 200:
                         access_token = response.json().get("access_token")
                         userinfo_resp = requests.get("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_token}"})
-                        email = userinfo_resp.json().get("email", "unknown")
-                        return email, refresh_token, DEFAULT_CLIENT_SECRET, val
+                        if userinfo_resp.status_code == 200:
+                            email = userinfo_resp.json().get("email", "unknown")
+                            if email != "unknown" and "@" in email:
+                                return email, refresh_token, DEFAULT_CLIENT_SECRET, val
             except Exception:
                 pass
     except Exception:
