@@ -1073,15 +1073,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ))
         
         menu.addItem(createStyledItem(
-            title: "Прибить зависшие сессии (Reaper)",
-            fontName: "System",
-            fontSize: 14,
-            action: #selector(reapSessionsClicked(_:)),
-            sfSymbol: "trash",
-            sfColor: colorYellow
-        ))
-        
-        menu.addItem(createStyledItem(
             title: "Перезапустить контейнер agy-workstation",
             fontName: "System",
             fontSize: 14,
