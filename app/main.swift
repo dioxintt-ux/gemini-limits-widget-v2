@@ -21,6 +21,7 @@ extension NSColor {
 class StatusBarLoaderView: NSView {
     var radarRadius: CGFloat = 3.0
     var isActive = false
+    var remainingPercent: Int? = nil
     
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 24, height: 22))
@@ -33,8 +34,19 @@ class StatusBarLoaderView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         
-        // В активном состоянии красим лоудер в фирменный зеленый Apple (#30D158), в неактивном - в стандартный цвет текста
-        let color = isActive ? NSColor(hex: "#30D158") : NSColor.controlTextColor
+        // Определяем цвет иконки в зависимости от оставшихся лимитов
+        let color: NSColor
+        if let pct = remainingPercent {
+            if pct < 5 {
+                color = NSColor(hex: "#FF3B30") // Apple Red
+            } else if pct < 20 {
+                color = NSColor(hex: "#FFCC00") // Apple Yellow
+            } else {
+                color = isActive ? NSColor(hex: "#30D158") : NSColor.controlTextColor
+            }
+        } else {
+            color = isActive ? NSColor(hex: "#30D158") : NSColor.controlTextColor
+        }
         
         // Статический внешний круг вокруг центральной точки (крупнее и четче)
         let staticRadius: CGFloat = 8.0
@@ -73,11 +85,14 @@ class StatusBarLoaderView: NSView {
 
 // Класс для выравнивания заголовков по левому краю вровень с лимитами
 class MenuHeaderView: NSView {
+    override var allowsVibrancy: Bool {
+        return true
+    }
     let iconView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
     
     init(title: String, iconName: String, iconColor: NSColor, textColor: NSColor) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 28))
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: 28))
         self.autoresizingMask = [.width]
         
         addSubview(iconView)
@@ -125,6 +140,9 @@ class MenuHeaderView: NSView {
 
 // Кастомный графический прогресс-бар в стиле Apple
 class QuotaProgressView: NSView {
+    override var allowsVibrancy: Bool {
+        return true
+    }
     let iconView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
     let percentLabel = NSTextField(labelWithString: "")
@@ -142,8 +160,8 @@ class QuotaProgressView: NSView {
         self.hasTimer = !timerText.isEmpty
         let height: CGFloat = hasTimer ? 44 : 28
         
-        // Начальная ширина 330pt для увеличения масштаба
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: height))
+        // Начальная ширина 360pt для нормального размещения русского текста
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: height))
         self.percent = percent
         self.barColor = barColor
         
@@ -208,10 +226,10 @@ class QuotaProgressView: NSView {
         
         // Выравнивание по левой сетке стандартных NSMenuItem: иконка на x: 9, текст на x: 32
         iconView.frame = NSRect(x: 9, y: row1Y, width: 14, height: 14)
-        titleLabel.frame = NSRect(x: 32, y: row1Y - 1, width: 105, height: 16)
+        titleLabel.frame = NSRect(x: 32, y: row1Y - 1, width: 125, height: 16)
         
-        // Прижимаем проценты к правому краю с отступом 50
-        percentLabel.frame = NSRect(x: w - 50, y: row1Y - 1, width: 35, height: 16)
+        // Прижимаем проценты к правому краю
+        percentLabel.frame = NSRect(x: w - 45, y: row1Y - 1, width: 35, height: 16)
         
         if hasTimer {
             timerIconView.frame = NSRect(x: 9, y: 4, width: 12, height: 12)
@@ -226,23 +244,151 @@ class QuotaProgressView: NSView {
         let row1Y: CGFloat = hasTimer ? 22 : 6
         let barY = row1Y + 4
         
-        // Прогресс-бар растягивается динамически
-        let barWidth = w - 145 - 60
+        // Прогресс-бар начинаем с x: 160 (после названия "Недельный лимит")
+        let barX: CGFloat = 160
+        let barWidth = w - barX - 50
         
         // Отрисовка подложки (трека)
-        let trackRect = NSRect(x: 145, y: barY, width: barWidth, height: 6)
+        let trackRect = NSRect(x: barX, y: barY, width: barWidth, height: 6)
         let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: 3, yRadius: 3)
-        NSColor.labelColor.withAlphaComponent(0.08).set()
+        NSColor.quaternaryLabelColor.set()
         trackPath.fill()
         
         // Отрисовка заполненной части прогресс-бара
         if percent > 0 {
             let fillWidth = max(6, CGFloat(percent / 100.0) * barWidth)
-            let fillRect = NSRect(x: 145, y: barY, width: fillWidth, height: 6)
+            let fillRect = NSRect(x: barX, y: barY, width: fillWidth, height: 6)
             let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3)
             barColor.set()
             fillPath.fill()
         }
+    }
+}
+
+// MARK: - Workstation Models & Views
+
+enum WidgetMode: Int {
+    case gemini = 0
+    case workstation = 1
+}
+
+struct WorkstationData: Decodable {
+    let status: String
+    let updated_at: Double?
+    let host: HostStats?
+    let container: ContainerStats?
+    let summary: SummaryStats?
+    let sessions: [SessionItem]?
+    let error: String?
+}
+
+struct HostStats: Decodable {
+    let load_1m: Double
+    let load_5m: Double
+    let load_15m: Double
+    let ram_total_mb: Int
+    let ram_used_mb: Int
+    let swap_total_mb: Int
+    let swap_used_mb: Int
+}
+
+struct ContainerStats: Decodable {
+    let ram_used_mb: Double
+    let ram_limit_mb: Double
+    let ram_percent: Double
+    let pids_count: Int
+}
+
+struct SummaryStats: Decodable {
+    let total: Int
+    let active: Int
+    let orphan: Int
+}
+
+struct SessionItem: Decodable {
+    let pid: Int
+    let tty: String
+    let is_active: Bool
+    let cpu: Double
+    let rss_mb: Double
+    let etime: String
+    let project: String
+    let cwd: String
+    let cid: String
+    let title: String
+    let profile: String
+}
+
+class ModeSwitchView: NSView {
+    override var allowsVibrancy: Bool { return true }
+    let segmentedControl = NSSegmentedControl(labels: ["Лимиты Gemini", "Agy Workstation"], trackingMode: .selectOne, target: nil, action: nil)
+    
+    init(selectedMode: WidgetMode, target: AnyObject?, action: Selector?) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: 36))
+        self.autoresizingMask = [.width]
+        
+        segmentedControl.selectedSegment = selectedMode.rawValue
+        segmentedControl.target = target
+        segmentedControl.action = action
+        segmentedControl.segmentStyle = .rounded
+        segmentedControl.controlSize = .regular
+        segmentedControl.frame = NSRect(x: 14, y: 5, width: 332, height: 26)
+        
+        addSubview(segmentedControl)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+class SessionRowView: NSView {
+    override var allowsVibrancy: Bool { return true }
+    
+    let statusDot = NSTextField(labelWithString: "●")
+    let titleLabel = NSTextField(labelWithString: "")
+    let subtitleLabel = NSTextField(labelWithString: "")
+    
+    init(session: SessionItem) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: 42))
+        self.autoresizingMask = [.width]
+        
+        statusDot.font = NSFont.systemFont(ofSize: 10)
+        statusDot.textColor = session.is_active ? NSColor(hex: "#30D158") : NSColor.systemOrange
+        
+        titleLabel.font = NSFont.systemFont(ofSize: 13)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        let projText = "[\(session.project)] "
+        let titleAttr = NSMutableAttributedString(string: projText, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+            .foregroundColor: NSColor(hex: "#0A84FF")
+        ])
+        titleAttr.append(NSAttributedString(string: "\(session.profile): \(session.title)", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor.labelColor
+        ]))
+        titleLabel.attributedStringValue = titleAttr
+        
+        subtitleLabel.font = NSFont.systemFont(ofSize: 11)
+        subtitleLabel.textColor = NSColor.secondaryLabelColor
+        let ttyText = session.is_active ? session.tty : "Без TTY (сирота)"
+        subtitleLabel.stringValue = "PID: \(session.pid)  •  \(session.rss_mb) MB  •  \(session.etime)  •  \(ttyText)"
+        
+        addSubview(statusDot)
+        addSubview(titleLabel)
+        addSubview(subtitleLabel)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func layout() {
+        super.layout()
+        let w = bounds.width
+        statusDot.frame = NSRect(x: 10, y: 22, width: 14, height: 16)
+        titleLabel.frame = NSRect(x: 28, y: 20, width: w - 38, height: 18)
+        subtitleLabel.frame = NSRect(x: 28, y: 3, width: w - 38, height: 16)
     }
 }
 
@@ -258,7 +404,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var quotasPath: String { "\(projectDir)/quotas.json" }
     var accountsPath: String { "\(projectDir)/accounts.json" }
+    var workstationStatusPath: String { "\(projectDir)/workstation_status.json" }
     var dbPath: String { NSHomeDirectory() + "/Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb" }
+    
+    var currentMode: WidgetMode = .gemini
     
     // Премиальные цвета Apple
     let colorPurple = NSColor(hex: "#AF52DE")
@@ -347,6 +496,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if now - lastQuotaUpdateTime >= interval {
             lastQuotaUpdateTime = now
             runPythonScript("fetcher.py")
+            runPythonScript("fetch_workstation.py")
         }
     }
     
@@ -355,6 +505,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Обновляем метку времени, чтобы фоновый таймер не дублировал запрос сразу после этого
         lastQuotaUpdateTime = Date().timeIntervalSince1970
         runPythonScript("fetcher.py")
+        runPythonScript("fetch_workstation.py")
     }
     
     func updateStatusAndMenu() {
@@ -371,19 +522,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             newStatus = .idle
         }
         
-        let statusChanged = (newStatus != currentStatus)
         currentStatus = newStatus
-        
-        if statusChanged || currentStatus != .active {
-            updateStatusBarIcon()
-        }
+        updateStatusBarIcon()
         
         rebuildMenu()
     }
     
     func updateStatusBarIcon() {
+        let minPercent = getActiveAccountMinLimitPercent()
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.loaderView.remainingPercent = minPercent
+            
             switch self.currentStatus {
             case .idle:
                 self.spinner.isHidden = true
@@ -417,12 +567,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Переводим лоудер в активное состояние (радар "оживает")
                 self.loaderView.isActive = true
                 self.loaderView.isHidden = false
+                self.loaderView.needsDisplay = true
                 
                 self.statusItem.length = 24
                 self.statusItem.button?.title = ""
                 self.statusItem.button?.image = nil
             }
         }
+    }
+    
+    func getActiveAccountMinLimitPercent() -> Int? {
+        let quotas = loadQuotas()
+        let accounts = loadAccounts()
+        guard let activeEmail = getActiveEmail(accounts: accounts) else { return nil }
+        
+        if let activeQuota = quotas.first(where: { $0.email.lowercased() == activeEmail.lowercased() }) {
+            if activeQuota.status == "ok", let limits5h = activeQuota.limits5h {
+                return limits5h.usedPercent
+            }
+        }
+        return nil
     }
     
     // Чтение состояния диалогов из transcript.jsonl
@@ -728,8 +892,211 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
     
+    // MARK: - Workstation Menu
+    
+    func loadWorkstationStatus() -> WorkstationData? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: workstationStatusPath)),
+              let ws = try? JSONDecoder().decode(WorkstationData.self, from: data) else {
+            return nil
+        }
+        return ws
+    }
+    
+    func buildWorkstationMenu() {
+        let ws = loadWorkstationStatus()
+        
+        let isOnline = (ws?.status == "online")
+        let hostStatusColor = isOnline ? colorGreen : colorRed
+        
+        // 1. Заголовок сервера DIO
+        let headerItem = NSMenuItem()
+        headerItem.view = MenuHeaderView(
+            title: isOnline ? "СЕРВЕР DIO: ОНЛАЙН" : "СЕРВЕР DIO: ОФФЛАЙН",
+            iconName: isOnline ? "server.rack" : "exclamationmark.triangle.fill",
+            iconColor: hostStatusColor,
+            textColor: hostStatusColor
+        )
+        menu.addItem(headerItem)
+        
+        if let ws = ws, isOnline {
+            if let host = ws.host {
+                // Load Average строка
+                let loadColor: NSColor
+                if host.load_1m > 12.0 {
+                    loadColor = colorRed
+                } else if host.load_1m > 6.0 {
+                    loadColor = colorYellow
+                } else {
+                    loadColor = colorGreen
+                }
+                
+                let loadItem = createStyledItem(
+                    title: String(format: "Load Average: %.2f, %.2f, %.2f (1m, 5m, 15m)", host.load_1m, host.load_5m, host.load_15m),
+                    fontName: "System",
+                    fontSize: 12,
+                    color: NSColor.labelColor,
+                    sfSymbol: "cpu",
+                    sfColor: loadColor
+                )
+                menu.addItem(loadItem)
+                
+                // Swap строка
+                let swapColor = (host.swap_used_mb > 100) ? colorRed : colorGreen
+                let swapItem = createStyledItem(
+                    title: "Swap: \(host.swap_used_mb) MB / \(host.swap_total_mb) MB",
+                    fontName: "System",
+                    fontSize: 12,
+                    color: (host.swap_used_mb > 100) ? colorRed : NSColor.secondaryLabelColor,
+                    sfSymbol: "arrow.triangle.swap",
+                    sfColor: swapColor
+                )
+                menu.addItem(swapItem)
+            }
+            
+            if let cont = ws.container {
+                // Контейнер RAM прогресс-бар
+                let ramUsedGb = String(format: "%.1f", cont.ram_used_mb / 1024.0)
+                let ramLimitGb = String(format: "%.1f", cont.ram_limit_mb / 1024.0)
+                let ramColor: NSColor
+                if cont.ram_percent > 85.0 {
+                    ramColor = colorRed
+                } else if cont.ram_percent > 70.0 {
+                    ramColor = colorYellow
+                } else {
+                    ramColor = NSColor(hex: "#0A84FF")
+                }
+                
+                let contItem = NSMenuItem()
+                contItem.view = QuotaProgressView(
+                    title: "RAM контейнера",
+                    percent: cont.ram_percent,
+                    iconName: "shippingbox.fill",
+                    iconColor: ramColor,
+                    barColor: ramColor,
+                    timeRemaining: "\(ramUsedGb)G / \(ramLimitGb)G (\(cont.pids_count) PID)"
+                )
+                menu.addItem(contItem)
+            }
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // 2. Список сессий
+            let total = ws.summary?.total ?? 0
+            let active = ws.summary?.active ?? 0
+            let orphan = ws.summary?.orphan ?? 0
+            
+            let sessionsHeader = NSMenuItem()
+            let sHeaderColor = (orphan > 0) ? colorYellow : colorPurple
+            sessionsHeader.view = MenuHeaderView(
+                title: "СЕССИИ AGY (Всего: \(total) | Активно: \(active) | Висит: \(orphan))",
+                iconName: "terminal.fill",
+                iconColor: sHeaderColor,
+                textColor: sHeaderColor
+            )
+            menu.addItem(sessionsHeader)
+            
+            if let sessions = ws.sessions, !sessions.isEmpty {
+                for s in sessions {
+                    let sItem = NSMenuItem()
+                    sItem.view = SessionRowView(session: s)
+                    menu.addItem(sItem)
+                }
+            } else {
+                let emptyItem = createStyledItem(
+                    title: "Нет запущенных сессий agy",
+                    fontName: "System",
+                    fontSize: 12,
+                    color: NSColor.secondaryLabelColor,
+                    sfSymbol: "checkmark.circle",
+                    sfColor: colorGreen
+                )
+                menu.addItem(emptyItem)
+            }
+        } else {
+            let errorItem = createStyledItem(
+                title: ws?.error ?? "Не удалось получить данные по SSH",
+                fontName: "System",
+                fontSize: 12,
+                color: colorRed,
+                sfSymbol: "xmark.octagon.fill",
+                sfColor: colorRed
+            )
+            menu.addItem(errorItem)
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // 3. Действия управления Workstation
+        let timeStr: String
+        if let ts = ws?.updated_at, ts > 0 {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss"
+            timeStr = formatter.string(from: Date(timeIntervalSince1970: ts))
+        } else {
+            timeStr = "—"
+        }
+        
+        menu.addItem(createStyledItem(
+            title: "Последнее обновление: \(timeStr)",
+            fontName: "System",
+            fontSize: 11,
+            color: NSColor.secondaryLabelColor,
+            sfSymbol: "clock",
+            sfColor: NSColor.secondaryLabelColor
+        ))
+        
+        menu.addItem(createStyledItem(
+            title: "Обновить статус Workstation",
+            fontName: "System",
+            fontSize: 14,
+            action: #selector(refreshWorkstationClicked(_:)),
+            sfSymbol: "arrow.clockwise",
+            sfColor: colorGreen
+        ))
+        
+        menu.addItem(createStyledItem(
+            title: "Прибить зависшие сессии (Reaper)",
+            fontName: "System",
+            fontSize: 14,
+            action: #selector(reapSessionsClicked(_:)),
+            sfSymbol: "trash",
+            sfColor: colorYellow
+        ))
+        
+        menu.addItem(createStyledItem(
+            title: "Перезапустить контейнер agy-workstation",
+            fontName: "System",
+            fontSize: 14,
+            action: #selector(restartWorkstationClicked(_:)),
+            sfSymbol: "arrow.clockwise.circle",
+            sfColor: colorRed
+        ))
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        menu.addItem(createStyledItem(
+            title: "Выйти",
+            fontName: "System",
+            fontSize: 14,
+            action: #selector(quitClicked(_:)),
+            sfSymbol: "power",
+            sfColor: colorRed
+        ))
+    }
+    
     func rebuildMenu() {
         menu.removeAllItems()
+        
+        // 0. Верхний переключатель режимов: Лимиты Gemini | Agy Workstation
+        let modeItem = NSMenuItem()
+        modeItem.view = ModeSwitchView(selectedMode: currentMode, target: self, action: #selector(modeChanged(_:)))
+        menu.addItem(modeItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        if currentMode == .workstation {
+            buildWorkstationMenu()
+            return
+        }
         
         let quotas = loadQuotas()
         let accounts = loadAccounts()
@@ -741,9 +1108,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var validCount = 0
         
         for q in quotas {
-            if q.status == "ok" {
-                let weeklyPercent = q.limitsWeekly?.usedPercent ?? 0
-                var fiveHourPercent = q.limits5h?.usedPercent ?? 0
+            if q.status == "ok", let w = q.limitsWeekly, let h5 = q.limits5h {
+                let weeklyPercent = w.usedPercent
+                var fiveHourPercent = h5.usedPercent
                 if weeklyPercent < 10 {
                     fiveHourPercent = 0
                 }
@@ -767,14 +1134,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             )
             menu.addItem(headerItem)
             
-            // Планка Five Hour Limit
+            // Планка 5-часовой лимит
             let item5h = NSMenuItem()
-            item5h.view = QuotaProgressView(title: "Five Hour Limit", percent: avg5h, iconName: "clock", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
+            item5h.view = QuotaProgressView(title: "5-часовой лимит", percent: avg5h, iconName: "clock", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
             menu.addItem(item5h)
             
-            // Планка Weekly Limit
+            // Планка Недельный лимит
             let itemWeekly = NSMenuItem()
-            itemWeekly.view = QuotaProgressView(title: "Weekly Limit", percent: avgWeekly, iconName: "calendar", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
+            itemWeekly.view = QuotaProgressView(title: "Недельный лимит", percent: avgWeekly, iconName: "calendar", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
             menu.addItem(itemWeekly)
             
             menu.addItem(NSMenuItem.separator())
@@ -857,11 +1224,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var timeRemWeekly = ""
             
             if let h5 = q.limits5h {
-                let desc = weeklyPercent < 10 ? "Недельный лимит исчерпан" : h5.description
+                let desc = weeklyPercent < 10 ? "Недельный лимит исчерпан" : (h5.usedPercent < 100 ? h5.description : "")
                 timeRem5h = formatTimeRemaining(desc)
             }
             if let weekly = q.limitsWeekly {
-                timeRemWeekly = formatTimeRemaining(weekly.description)
+                let desc = weekly.usedPercent < 100 ? weekly.description : ""
+                timeRemWeekly = formatTimeRemaining(desc)
             }
             
             if let h5 = q.limits5h {
@@ -873,7 +1241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let limitColor = getLimitColor(percent: Int(used))
                 let itemH5 = NSMenuItem()
                 itemH5.view = QuotaProgressView(
-                    title: "Five Hour Limit",
+                    title: "5-часовой лимит",
                     percent: used,
                     iconName: "clock",
                     iconColor: NSColor.secondaryLabelColor,
@@ -887,7 +1255,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let limitColor = getLimitColor(percent: weekly.usedPercent)
                 let itemW = NSMenuItem()
                 itemW.view = QuotaProgressView(
-                    title: "Weekly Limit",
+                    title: "Недельный лимит",
                     percent: Double(weekly.usedPercent),
                     iconName: "calendar",
                     iconColor: NSColor.secondaryLabelColor,
@@ -1021,6 +1389,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", appleScript]
         try? process.run()
+    }
+    
+    @objc func modeChanged(_ sender: NSSegmentedControl) {
+        if let mode = WidgetMode(rawValue: sender.selectedSegment) {
+            currentMode = mode
+            if currentMode == .workstation {
+                runPythonScript("fetch_workstation.py")
+            }
+            rebuildMenu()
+        }
+    }
+    
+    @objc func refreshWorkstationClicked(_ sender: NSMenuItem) {
+        runPythonScript("fetch_workstation.py")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.rebuildMenu()
+        }
+    }
+    
+    @objc func reapSessionsClicked(_ sender: NSMenuItem) {
+        runPythonScript("fetch_workstation.py", arguments: ["--reap"])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.rebuildMenu()
+        }
+    }
+    
+    @objc func restartWorkstationClicked(_ sender: NSMenuItem) {
+        let alert = NSAlert()
+        alert.messageText = "Перезапуск agy-workstation"
+        alert.informativeText = "Вы уверены, что хотите перезапустить контейнер на сервере dio? Это сбросит все активные процессы."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Перезапустить")
+        alert.addButton(withTitle: "Отмена")
+        if alert.runModal() == .alertFirstButtonReturn {
+            runPythonScript("fetch_workstation.py", arguments: ["--restart"])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                self?.rebuildMenu()
+            }
+        }
     }
     
     @objc func openFolderClicked(_ sender: NSMenuItem) {

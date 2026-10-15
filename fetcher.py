@@ -63,6 +63,41 @@ def query_google_api(access_token, endpoint):
         print(f"Ошибка при запросе к {endpoint}: {e}")
         return None
 
+from datetime import datetime, timezone
+
+def generate_desc_from_reset_time(reset_time_str):
+    if not reset_time_str:
+        return ""
+    try:
+        r_str = reset_time_str
+        if r_str.endswith("Z"):
+            r_str = r_str[:-1] + "+00:00"
+        dt = datetime.fromisoformat(r_str)
+        now = datetime.now(timezone.utc)
+        diff = dt - now
+        total_seconds = int(diff.total_seconds())
+        if total_seconds <= 0:
+            return ""
+        
+        days = total_seconds // 86400
+        hours = (total_seconds % 86400) // 3600
+        minutes = (total_seconds % 3600) // 60
+        
+        if days > 0:
+            if hours > 0:
+                return f"refresh in {days} days, {hours} hours."
+            else:
+                return f"refresh in {days} days."
+        elif hours > 0:
+            if minutes > 0:
+                return f"refresh in {hours} hours, {minutes} minutes."
+            else:
+                return f"refresh in {hours} hours."
+        else:
+            return f"refresh in {minutes} minutes."
+    except Exception:
+        return ""
+
 def parse_quota_data(load_assist_data, quota_summary_data):
     parsed_quotas = {
         "tier": "unknown",
@@ -95,6 +130,11 @@ def parse_quota_data(load_assist_data, quota_summary_data):
                 remaining_percent = int(round(remaining_fraction * 100))
                 reset_time = bucket.get("resetTime", "")
                 desc = bucket.get("description", "")
+                # Показываем время сброса только если хотя бы 1% потрачен (остаток < 100%)
+                if remaining_fraction >= 1.0 or remaining_percent >= 100:
+                    desc = ""
+                elif not desc and reset_time:
+                    desc = generate_desc_from_reset_time(reset_time)
                 
                 parsed_group["limits"][window] = {
                     "displayName": display_name,
@@ -158,45 +198,46 @@ def sync_accounts_with_ide(accounts_path):
                     if response.status_code == 200:
                         access_token = response.json().get("access_token")
                         userinfo_resp = requests.get("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_token}"})
-                        email = userinfo_resp.json().get("email", "unknown")
-                        
-                        # Читаем текущие аккаунты
-                        accounts = []
-                        if os.path.exists(accounts_path):
-                            try:
-                                with open(accounts_path, "r", encoding="utf-8") as f:
-                                    accounts = json.load(f)
-                            except Exception:
-                                pass
+                        if userinfo_resp.status_code == 200:
+                            email = userinfo_resp.json().get("email", "unknown")
+                            if email != "unknown" and "@" in email:
+                                # Читаем текущие аккаунты
+                                accounts = []
+                                if os.path.exists(accounts_path):
+                                    try:
+                                        with open(accounts_path, "r", encoding="utf-8") as f:
+                                            accounts = json.load(f)
+                                    except Exception:
+                                        pass
+                                        
+                                # Ищем, есть ли уже этот email
+                                existing = next((a for a in accounts if a["email"] == email), None)
+                                updated = False
                                 
-                        # Ищем, есть ли уже этот email
-                        existing = next((a for a in accounts if a["email"] == email), None)
-                        updated = False
-                        
-                        if not existing:
-                            alias = email.split('@')[0]
-                            existing = {
-                                "email": email,
-                                "alias": alias,
-                                "refresh_token": refresh_token,
-                                "client_secret": DEFAULT_CLIENT_SECRET,
-                                "db_value": val
-                            }
-                            accounts.append(existing)
-                            print(f"Новый аккаунт {email} автоматически импортирован из IDE с сессией.")
-                            updated = True
-                        else:
-                            if existing.get("refresh_token") != refresh_token:
-                                existing["refresh_token"] = refresh_token
-                                updated = True
-                            if existing.get("db_value") != val:
-                                existing["db_value"] = val
-                                updated = True
-                                
-                        if updated:
-                            with open(accounts_path, "w", encoding="utf-8") as f:
-                                json.dump(accounts, f, indent=4, ensure_ascii=False)
-                            print(f"Сессия/токен для аккаунта {email} синхронизирована с IDE.")
+                                if not existing:
+                                    alias = email.split('@')[0]
+                                    existing = {
+                                        "email": email,
+                                        "alias": alias,
+                                        "refresh_token": refresh_token,
+                                        "client_secret": DEFAULT_CLIENT_SECRET,
+                                        "db_value": val
+                                    }
+                                    accounts.append(existing)
+                                    print(f"Новый аккаунт {email} автоматически импортирован из IDE с сессией.")
+                                    updated = True
+                                else:
+                                    if existing.get("refresh_token") != refresh_token:
+                                        existing["refresh_token"] = refresh_token
+                                        updated = True
+                                    if existing.get("db_value") != val:
+                                        existing["db_value"] = val
+                                        updated = True
+                                        
+                                if updated:
+                                    with open(accounts_path, "w", encoding="utf-8") as f:
+                                        json.dump(accounts, f, indent=4, ensure_ascii=False)
+                                    print(f"Сессия/токен для аккаунта {email} синхронизирована с IDE.")
                         break
             except Exception:
                 pass
