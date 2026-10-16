@@ -757,7 +757,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     return false
                 }
                 
-                if let group = geminiGroups.first,
+                if let group = geminiGroups.first ?? groups.first,
                    let limits = group["limits"] as? [String: Any] {
                    
                     if let h5 = limits["5h"] as? [String: Any] {
