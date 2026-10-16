@@ -98,7 +98,7 @@ def generate_desc_from_reset_time(reset_time_str):
     except Exception:
         return ""
 
-def parse_quota_data(load_assist_data, quota_summary_data):
+def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
     parsed_quotas = {
         "tier": "unknown",
         "groups": []
@@ -110,7 +110,58 @@ def parse_quota_data(load_assist_data, quota_summary_data):
         if tiers:
             parsed_quotas["tier"] = tiers[0].get("id", "unknown")
             
-    # Парсим группы квот из retrieveUserQuotaSummary
+    # 1. Извлекаем реальную квоту для Gemini моделей из fetchAvailableModels
+    gemini_quota_info = None
+    if models_data and isinstance(models_data, dict):
+        models_dict = models_data.get("models", {})
+        for m_id, m_val in models_dict.items():
+            if ("gemini" in m_id or m_val.get("modelProvider") == "MODEL_PROVIDER_GOOGLE") and m_val.get("quotaInfo"):
+                gemini_quota_info = m_val["quotaInfo"]
+                break
+
+    if gemini_quota_info:
+        remaining_fraction = gemini_quota_info.get("remainingFraction", 1.0)
+        remaining_percent = int(round(remaining_fraction * 100))
+        reset_time = gemini_quota_info.get("resetTime", "")
+        desc = ""
+        if remaining_fraction < 1.0 and remaining_percent < 100 and reset_time:
+            desc = generate_desc_from_reset_time(reset_time)
+            
+        gemini_group = {
+            "displayName": "Gemini models",
+            "description": "Models within this group: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3 Flash",
+            "limits": {
+                "5h": {
+                    "displayName": "Five Hour Limit Remaining",
+                    "remaining_fraction": remaining_fraction,
+                    "used_percent": remaining_percent,
+                    "reset_time": reset_time,
+                    "description": desc
+                }
+            }
+        }
+        # Подтягиваем недельный лимит из quota_summary_data если есть
+        if quota_summary_data and "groups" in quota_summary_data:
+            for g in quota_summary_data["groups"]:
+                for b in g.get("buckets", []):
+                    if b.get("window") == "weekly":
+                        w_fraction = b.get("remainingFraction", 1.0)
+                        w_percent = int(round(w_fraction * 100))
+                        w_reset = b.get("resetTime", "")
+                        w_desc = ""
+                        if w_fraction < 1.0 and w_percent < 100 and w_reset:
+                            w_desc = generate_desc_from_reset_time(w_reset)
+                        gemini_group["limits"]["weekly"] = {
+                            "displayName": b.get("displayName", "Weekly Limit Remaining"),
+                            "remaining_fraction": w_fraction,
+                            "used_percent": w_percent,
+                            "reset_time": w_reset,
+                            "description": w_desc
+                        }
+                        break
+        parsed_quotas["groups"].append(gemini_group)
+
+    # 2. Парсим группы квот из retrieveUserQuotaSummary
     if quota_summary_data and "groups" in quota_summary_data:
         for group in quota_summary_data["groups"]:
             group_name = group.get("displayName", "Unknown Group")
@@ -320,7 +371,7 @@ def main():
             with open(debug_qs_path, "w", encoding="utf-8") as f:
                 json.dump(quota_summary, f, indent=4, ensure_ascii=False)
                 
-        quotas = parse_quota_data(load_assist, quota_summary)
+        quotas = parse_quota_data(load_assist, quota_summary, models)
         
         results.append({
             "email": email,
