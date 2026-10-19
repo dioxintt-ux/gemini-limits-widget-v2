@@ -301,8 +301,10 @@ struct ContainerStats: Decodable {
 
 struct SummaryStats: Decodable {
     let total: Int
-    let active: Int
-    let orphan: Int
+    let running: Int?
+    let idle: Int?
+    let new: Int?
+    let orphan: Int?
 }
 
 struct SessionItem: Decodable {
@@ -317,6 +319,9 @@ struct SessionItem: Decodable {
     let cid: String
     let title: String
     let profile: String
+    let indicator_color: String?
+    let indicator_text: String?
+    let status_code: String?
 }
 
 class ModeSwitchView: NSView {
@@ -354,7 +359,18 @@ class SessionRowView: NSView {
         self.autoresizingMask = [.width]
         
         statusDot.font = NSFont.systemFont(ofSize: 10)
-        statusDot.textColor = session.is_active ? NSColor(hex: "#30D158") : NSColor.systemOrange
+        switch session.indicator_color {
+        case "green":
+            statusDot.textColor = NSColor(hex: "#30D158") // Зеленый: работает в моменте
+        case "yellow":
+            statusDot.textColor = NSColor(hex: "#FFCC00") // Желтый: диалог открыт, в ожидании
+        case "red":
+            statusDot.textColor = NSColor(hex: "#FF3B30") // Красный: ошибка или висит
+        case "gray":
+            statusDot.textColor = NSColor(hex: "#8E8E93") // Серый: новый диалог, ожидает
+        default:
+            statusDot.textColor = session.is_active ? NSColor(hex: "#8E8E93") : NSColor(hex: "#FF3B30")
+        }
         
         titleLabel.font = NSFont.systemFont(ofSize: 13)
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -371,8 +387,8 @@ class SessionRowView: NSView {
         
         subtitleLabel.font = NSFont.systemFont(ofSize: 11)
         subtitleLabel.textColor = NSColor.secondaryLabelColor
-        let ttyText = session.is_active ? session.tty : "Без TTY (сирота)"
-        subtitleLabel.stringValue = "PID: \(session.pid)  •  \(session.rss_mb) MB  •  \(session.etime)  •  \(ttyText)"
+        let statusDesc = session.indicator_text ?? (session.is_active ? "Активен" : "Висит")
+        subtitleLabel.stringValue = "PID: \(session.pid)  •  \(session.rss_mb) MB  •  \(statusDesc)  •  \(session.etime)"
         
         addSubview(statusDot)
         addSubview(titleLabel)
@@ -741,7 +757,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     return false
                 }
                 
-                if let group = geminiGroups.first,
+                if let group = geminiGroups.first ?? groups.first,
                    let limits = group["limits"] as? [String: Any] {
                    
                     if let h5 = limits["5h"] as? [String: Any] {
@@ -982,13 +998,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             
             // 2. Список сессий
             let total = ws.summary?.total ?? 0
-            let active = ws.summary?.active ?? 0
+            let running = ws.summary?.running ?? 0
+            let idle = ws.summary?.idle ?? 0
+            let newCount = ws.summary?.new ?? 0
             let orphan = ws.summary?.orphan ?? 0
             
             let sessionsHeader = NSMenuItem()
-            let sHeaderColor = (orphan > 0) ? colorYellow : colorPurple
+            let sHeaderColor = (orphan > 0) ? colorRed : (running > 0 ? colorGreen : colorPurple)
             sessionsHeader.view = MenuHeaderView(
-                title: "СЕССИИ AGY (Всего: \(total) | Активно: \(active) | Висит: \(orphan))",
+                title: "СЕССИИ AGY (В работе: \(running) | Ожидают: \(idle) | Новых: \(newCount) | Всего: \(total))",
                 iconName: "terminal.fill",
                 iconColor: sHeaderColor,
                 textColor: sHeaderColor
@@ -1052,15 +1070,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action: #selector(refreshWorkstationClicked(_:)),
             sfSymbol: "arrow.clockwise",
             sfColor: colorGreen
-        ))
-        
-        menu.addItem(createStyledItem(
-            title: "Прибить зависшие сессии (Reaper)",
-            fontName: "System",
-            fontSize: 14,
-            action: #selector(reapSessionsClicked(_:)),
-            sfSymbol: "trash",
-            sfColor: colorYellow
         ))
         
         menu.addItem(createStyledItem(

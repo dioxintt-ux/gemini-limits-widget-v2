@@ -10,7 +10,7 @@ STATUS_FILE = os.path.join(PROJECT_DIR, "workstation_status.json")
 def fetch_stats():
     cmd = [
         "ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR",
-        "dio", "docker exec agy-workstation /home/ubuntu/.local/bin/workstation_stats.py"
+        "dio", "python3 /home/ubuntu/apps/agy-workstation/data/local_bin/workstation_stats.py"
     ]
     try:
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
@@ -39,7 +39,7 @@ def fetch_stats():
 
 def handle_action(action, *args):
     if action == "--reap":
-        cmd = ["ssh", "-o", "ConnectTimeout=4", "-o", "BatchMode=yes", "dio", "docker exec agy-workstation /home/ubuntu/.local/bin/workstation_stats.py --reap"]
+        cmd = ["ssh", "-o", "ConnectTimeout=4", "-o", "BatchMode=yes", "dio", "python3 /home/ubuntu/apps/agy-workstation/data/local_bin/workstation_stats.py --reap"]
         subprocess.run(cmd, timeout=6)
         fetch_stats()
     elif action == "--restart":
@@ -47,7 +47,7 @@ def handle_action(action, *args):
         subprocess.run(cmd, timeout=15)
         fetch_stats()
     elif action == "--kill" and args:
-        cmd = ["ssh", "-o", "ConnectTimeout=4", "-o", "BatchMode=yes", "dio", f"docker exec agy-workstation /home/ubuntu/.local/bin/workstation_stats.py --kill {args[0]}"]
+        cmd = ["ssh", "-o", "ConnectTimeout=4", "-o", "BatchMode=yes", "dio", f"python3 /home/ubuntu/apps/agy-workstation/data/local_bin/workstation_stats.py --kill {args[0]}"]
         subprocess.run(cmd, timeout=6)
         fetch_stats()
 
