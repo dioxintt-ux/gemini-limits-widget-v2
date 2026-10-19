@@ -41,8 +41,13 @@ def refresh_access_token(client_id, client_secret, refresh_token):
         return None
     return response.json().get("access_token")
 
-def query_google_api(access_token, endpoint):
-    url = f"https://daily-cloudcode-pa.googleapis.com/v1internal:{endpoint}"
+def query_google_api(access_token, endpoint, base_url=None):
+    if not base_url:
+        if endpoint == "retrieveUserQuotaSummary":
+            base_url = "https://cloudcode-pa.googleapis.com"
+        else:
+            base_url = "https://daily-cloudcode-pa.googleapis.com"
+    url = f"{base_url}/v1internal:{endpoint}"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
@@ -140,9 +145,11 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                 }
             }
         }
-        # Подтягиваем недельный лимит из quota_summary_data если есть
+        # Подтягиваем недельный лимит из quota_summary_data строго для Gemini Models
         if quota_summary_data and "groups" in quota_summary_data:
             for g in quota_summary_data["groups"]:
+                if "gemini" not in g.get("displayName", "").lower():
+                    continue
                 for b in g.get("buckets", []):
                     if b.get("window") == "weekly":
                         w_fraction = b.get("remainingFraction", 1.0)
@@ -161,10 +168,12 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                         break
         parsed_quotas["groups"].append(gemini_group)
 
-    # 2. Парсим группы квот из retrieveUserQuotaSummary
+    # 2. Парсим группы квот из retrieveUserQuotaSummary (только Gemini)
     if quota_summary_data and "groups" in quota_summary_data:
         for group in quota_summary_data["groups"]:
             group_name = group.get("displayName", "Unknown Group")
+            if "gemini" not in group_name.lower():
+                continue
             group_desc = group.get("description", "")
             
             parsed_group = {
