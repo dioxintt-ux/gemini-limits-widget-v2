@@ -5,6 +5,11 @@ import requests
 import sqlite3
 import re
 import base64
+import subprocess
+import urllib3
+from datetime import datetime, timezone
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Загружаем учетные данные из файла .env (чтобы не хранить секреты в репозитории)
 DEFAULT_CLIENT_ID = ""
@@ -68,8 +73,6 @@ def query_google_api(access_token, endpoint, base_url=None):
         print(f"Ошибка при запросе к {endpoint}: {e}")
         return None
 
-from datetime import datetime, timezone
-
 def generate_desc_from_reset_time(reset_time_str):
     if not reset_time_str:
         return ""
@@ -102,6 +105,53 @@ def generate_desc_from_reset_time(reset_time_str):
             return f"refresh in {minutes} minutes."
     except Exception:
         return ""
+
+def get_ide_language_server_quotas():
+    try:
+        ps_out = subprocess.check_output(["ps", "aux"], stderr=subprocess.DEVNULL).decode("utf-8", errors="ignore")
+        csrf_match = re.search(r"--csrf_token\s+([a-f0-9\-]+)", ps_out)
+        if not csrf_match:
+            return None
+        csrf_token = csrf_match.group(1)
+
+        lsof_out = subprocess.check_output(["lsof", "-Pan", "-c", "language_server_macos_arm", "-i"], stderr=subprocess.DEVNULL).decode("utf-8", errors="ignore")
+        ports = re.findall(r":(\d+)\s+\(LISTEN\)", lsof_out)
+        if not ports:
+            return None
+
+        headers = {
+            "Connect-Protocol-Version": "1",
+            "Content-Type": "application/json",
+            "X-Codeium-Csrf-Token": csrf_token
+        }
+
+        for port in ports:
+            try:
+                r_user = requests.post(
+                    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetUserStatus",
+                    headers=headers, json={}, verify=False, timeout=2
+                )
+                if r_user.status_code != 200:
+                    continue
+                email = r_user.json().get("userStatus", {}).get("email")
+                if not email:
+                    continue
+
+                r_quota = requests.post(
+                    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary",
+                    headers=headers, json={"forceRefresh": True}, verify=False, timeout=3
+                )
+                if r_quota.status_code != 200:
+                    continue
+                return {
+                    "email": email,
+                    "quota_summary": r_quota.json().get("response", {})
+                }
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
 
 def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
     parsed_quotas = {
@@ -145,19 +195,20 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                 }
             }
         }
-        # Подтягиваем недельный лимит из quota_summary_data строго для Gemini Models
+        # Подтягиваем лимиты из quota_summary_data строго для Gemini Models
         if quota_summary_data and "groups" in quota_summary_data:
             for g in quota_summary_data["groups"]:
                 if "gemini" not in g.get("displayName", "").lower():
                     continue
                 for b in g.get("buckets", []):
-                    if b.get("window") == "weekly":
-                        w_fraction = b.get("remainingFraction", 1.0)
-                        w_percent = int(round(w_fraction * 100))
-                        w_reset = b.get("resetTime", "")
-                        w_desc = ""
-                        if w_fraction < 1.0 and w_percent < 100 and w_reset:
-                            w_desc = generate_desc_from_reset_time(w_reset)
+                    w_window = b.get("window")
+                    w_fraction = b.get("remainingFraction", 1.0)
+                    w_percent = int(round(w_fraction * 100))
+                    w_reset = b.get("resetTime", "")
+                    w_desc = b.get("description", "")
+                    if not w_desc and w_fraction < 1.0 and w_percent < 100 and w_reset:
+                        w_desc = generate_desc_from_reset_time(w_reset)
+                    if w_window == "weekly":
                         gemini_group["limits"]["weekly"] = {
                             "displayName": b.get("displayName", "Weekly Limit Remaining"),
                             "remaining_fraction": w_fraction,
@@ -165,11 +216,30 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                             "reset_time": w_reset,
                             "description": w_desc
                         }
-                        break
+                    elif w_window == "5h":
+                        gemini_group["limits"]["5h"] = {
+                            "displayName": b.get("displayName", "Five Hour Limit Remaining"),
+                            "remaining_fraction": w_fraction,
+                            "used_percent": w_percent,
+                            "reset_time": w_reset,
+                            "description": w_desc
+                        }
+                break
+
+        # Гарантируем наличие weekly лимита, чтобы SwiftBar виджет не скрывал строку и корректно рассчитывал средние значения
+        if "weekly" not in gemini_group["limits"]:
+            gemini_group["limits"]["weekly"] = {
+                "displayName": "Weekly Limit Remaining",
+                "remaining_fraction": 1.0,
+                "used_percent": 100,
+                "reset_time": "",
+                "description": ""
+            }
+
         parsed_quotas["groups"].append(gemini_group)
 
-    # 2. Парсим группы квот из retrieveUserQuotaSummary (только Gemini)
-    if quota_summary_data and "groups" in quota_summary_data:
+    # 2. Если models_data не предоставила группу Gemini, берем из retrieveUserQuotaSummary
+    if not parsed_quotas["groups"] and quota_summary_data and "groups" in quota_summary_data:
         for group in quota_summary_data["groups"]:
             group_name = group.get("displayName", "Unknown Group")
             if "gemini" not in group_name.lower():
@@ -186,11 +256,9 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                 window = bucket.get("window", "unknown")
                 display_name = bucket.get("displayName", window)
                 remaining_fraction = bucket.get("remainingFraction", 1.0)
-                # Показываем процент оставшегося лимита, а не потраченного!
                 remaining_percent = int(round(remaining_fraction * 100))
                 reset_time = bucket.get("resetTime", "")
                 desc = bucket.get("description", "")
-                # Показываем время сброса только если хотя бы 1% потрачен (остаток < 100%)
                 if remaining_fraction >= 1.0 or remaining_percent >= 100:
                     desc = ""
                 elif not desc and reset_time:
@@ -199,11 +267,18 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                 parsed_group["limits"][window] = {
                     "displayName": display_name,
                     "remaining_fraction": remaining_fraction,
-                    "used_percent": remaining_percent, # Передаем оставшийся процент в used_percent для совместимости с SwiftBar
+                    "used_percent": remaining_percent,
                     "reset_time": reset_time,
                     "description": desc
                 }
-                
+            if "weekly" not in parsed_group["limits"]:
+                parsed_group["limits"]["weekly"] = {
+                    "displayName": "Weekly Limit Remaining",
+                    "remaining_fraction": 1.0,
+                    "used_percent": 100,
+                    "reset_time": "",
+                    "description": ""
+                }
             parsed_quotas["groups"].append(parsed_group)
             
     return parsed_quotas
@@ -246,7 +321,6 @@ def sync_accounts_with_ide(accounts_path):
                     raw_token = clean_token.decode('utf-8')
                     refresh_token = re.sub(r'[^a-zA-Z0-9_/\.-]', '', raw_token).rstrip('.')
                     
-                    # Проверяем токен с правильным Client ID и Secret
                     url = "https://oauth2.googleapis.com/token"
                     payload = {
                         "client_id": DEFAULT_CLIENT_ID,
@@ -261,7 +335,6 @@ def sync_accounts_with_ide(accounts_path):
                         if userinfo_resp.status_code == 200:
                             email = userinfo_resp.json().get("email", "unknown")
                             if email != "unknown" and "@" in email:
-                                # Читаем текущие аккаунты
                                 accounts = []
                                 if os.path.exists(accounts_path):
                                     try:
@@ -270,7 +343,6 @@ def sync_accounts_with_ide(accounts_path):
                                     except Exception:
                                         pass
                                         
-                                # Ищем, есть ли уже этот email
                                 existing = next((a for a in accounts if a["email"] == email), None)
                                 updated = False
                                 
@@ -311,6 +383,11 @@ def main():
     
     # Автоматически синхронизируем токен с текущей запущенной IDE
     sync_accounts_with_ide(accounts_path)
+
+    # Опрашиваем запущенный в Antigravity IDE Language Server для получения актуальных Gemini квот
+    ide_quota_data = get_ide_language_server_quotas()
+    if ide_quota_data:
+        print(f"Обнаружен активный Antigravity Language Server для аккаунта: {ide_quota_data.get('email')}")
     
     if not os.path.exists(accounts_path):
         print(f"Файл аккаунтов не найден: {accounts_path}")
@@ -333,7 +410,6 @@ def main():
         email = account["email"]
         alias = account["alias"]
         refresh_token = account["refresh_token"]
-        # Берем секрет, сохраненный при авторизации, или дефолтный
         client_secret = account.get("client_secret", default_secret)
         
         print(f"\nОбновление лимитов для: {alias} ({email})...")
@@ -364,8 +440,13 @@ def main():
         load_assist = query_google_api(access_token, "loadCodeAssist")
         print("Запрос fetchAvailableModels...")
         models = query_google_api(access_token, "fetchAvailableModels")
-        print("Запрос retrieveUserQuotaSummary...")
-        quota_summary = query_google_api(access_token, "retrieveUserQuotaSummary")
+
+        if ide_quota_data and ide_quota_data.get("email") == email and ide_quota_data.get("quota_summary"):
+            quota_summary = ide_quota_data["quota_summary"]
+            print(f"  Используются live квоты Gemini из Language Server для {email}")
+        else:
+            print("Запрос retrieveUserQuotaSummary...")
+            quota_summary = query_google_api(access_token, "retrieveUserQuotaSummary")
         
         if load_assist:
             debug_la_path = os.path.join(dir_path, f"debug_loadCodeAssist_{email}.json")
@@ -394,7 +475,6 @@ def main():
         
     print(f"\nВсе лимиты обновлены и сохранены в {quotas_path}")
 
-    # Триггерим автоматическое обновление SwiftBar
     try:
         os.system("open -g swiftbar://refreshallplugins")
     except Exception:
