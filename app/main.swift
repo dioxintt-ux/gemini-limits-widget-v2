@@ -92,7 +92,7 @@ class MenuHeaderView: NSView {
     let titleLabel = NSTextField(labelWithString: "")
     
     init(title: String, iconName: String, iconColor: NSColor, textColor: NSColor) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 28))
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: 28))
         self.autoresizingMask = [.width]
         
         addSubview(iconView)
@@ -138,6 +138,94 @@ class MenuHeaderView: NSView {
     }
 }
 
+// Кастомная плашка для Argon с каймой ("коемочкой выделен")
+class ArgonCardView: NSView {
+    override var allowsVibrancy: Bool { return true }
+    
+    let iconView = NSImageView()
+    let titleLabel = NSTextField(labelWithString: "")
+    let badgeLabel = NSTextField(labelWithString: "")
+    let emailLabel = NSTextField(labelWithString: "")
+    
+    let borderColor = NSColor(hex: "#AF52DE") // акцентный фиолетовый
+    
+    init(title: String, email: String) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: 46))
+        self.autoresizingMask = [.width]
+        
+        addSubview(iconView)
+        addSubview(titleLabel)
+        addSubview(badgeLabel)
+        addSubview(emailLabel)
+        
+        iconView.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        if #available(macOS 12.0, *) {
+            let config = NSImage.SymbolConfiguration(paletteColors: [NSColor(hex: "#FFD700"), NSColor(hex: "#AF52DE")])
+            iconView.image = iconView.image?.withSymbolConfiguration(config)
+        }
+        
+        titleLabel.stringValue = title
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 13)
+        titleLabel.textColor = NSColor.labelColor
+        titleLabel.isEditable = false
+        titleLabel.isBordered = false
+        titleLabel.drawsBackground = false
+        
+        badgeLabel.stringValue = "ULTRA ARCH"
+        badgeLabel.font = NSFont.boldSystemFont(ofSize: 9)
+        badgeLabel.textColor = NSColor(hex: "#AF52DE")
+        badgeLabel.isEditable = false
+        badgeLabel.isBordered = false
+        badgeLabel.drawsBackground = false
+        
+        emailLabel.stringValue = email
+        emailLabel.font = NSFont.systemFont(ofSize: 11)
+        emailLabel.textColor = NSColor.secondaryLabelColor
+        emailLabel.isEditable = false
+        emailLabel.isBordered = false
+        emailLabel.drawsBackground = false
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        let insetRect = NSRect(x: 8, y: 3, width: bounds.width - 16, height: bounds.height - 6)
+        let borderPath = NSBezierPath(roundedRect: insetRect, xRadius: 7, yRadius: 7)
+        
+        // Легкая заливка подложки
+        borderColor.withAlphaComponent(0.08).setFill()
+        borderPath.fill()
+        
+        // Четкая каемочка
+        borderColor.withAlphaComponent(0.85).setStroke()
+        borderPath.lineWidth = 1.4
+        borderPath.stroke()
+    }
+    
+    override func layout() {
+        super.layout()
+        iconView.frame = NSRect(x: 18, y: 15, width: 16, height: 16)
+        titleLabel.frame = NSRect(x: 40, y: 22, width: 180, height: 18)
+        badgeLabel.frame = NSRect(x: bounds.width - 95, y: 23, width: 75, height: 16)
+        emailLabel.frame = NSRect(x: 40, y: 6, width: bounds.width - 55, height: 16)
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        if let menuItem = self.enclosingMenuItem {
+            if menuItem.isEnabled, let action = menuItem.action, let target = menuItem.target {
+                _ = target.perform(action, with: menuItem)
+                menuItem.menu?.cancelTracking()
+            }
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
+}
+
 // Кастомный графический прогресс-бар в стиле Apple
 class QuotaProgressView: NSView {
     override var allowsVibrancy: Bool {
@@ -160,8 +248,8 @@ class QuotaProgressView: NSView {
         self.hasTimer = !timerText.isEmpty
         let height: CGFloat = hasTimer ? 44 : 28
         
-        // Начальная ширина 330pt для увеличения масштаба
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: height))
+        // Начальная ширина 360pt для нормального размещения русского текста
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: height))
         self.percent = percent
         self.barColor = barColor
         
@@ -226,10 +314,10 @@ class QuotaProgressView: NSView {
         
         // Выравнивание по левой сетке стандартных NSMenuItem: иконка на x: 9, текст на x: 32
         iconView.frame = NSRect(x: 9, y: row1Y, width: 14, height: 14)
-        titleLabel.frame = NSRect(x: 32, y: row1Y - 1, width: 105, height: 16)
+        titleLabel.frame = NSRect(x: 32, y: row1Y - 1, width: 125, height: 16)
         
-        // Прижимаем проценты к правому краю с отступом 50
-        percentLabel.frame = NSRect(x: w - 50, y: row1Y - 1, width: 35, height: 16)
+        // Прижимаем проценты к правому краю
+        percentLabel.frame = NSRect(x: w - 45, y: row1Y - 1, width: 35, height: 16)
         
         if hasTimer {
             timerIconView.frame = NSRect(x: 9, y: 4, width: 12, height: 12)
@@ -244,11 +332,12 @@ class QuotaProgressView: NSView {
         let row1Y: CGFloat = hasTimer ? 22 : 6
         let barY = row1Y + 4
         
-        // Прогресс-бар растягивается динамически
-        let barWidth = w - 145 - 60
+        // Прогресс-бар начинаем с x: 160 (после названия "Недельный лимит")
+        let barX: CGFloat = 160
+        let barWidth = w - barX - 50
         
         // Отрисовка подложки (трека)
-        let trackRect = NSRect(x: 145, y: barY, width: barWidth, height: 6)
+        let trackRect = NSRect(x: barX, y: barY, width: barWidth, height: 6)
         let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: 3, yRadius: 3)
         NSColor.quaternaryLabelColor.set()
         trackPath.fill()
@@ -256,7 +345,7 @@ class QuotaProgressView: NSView {
         // Отрисовка заполненной части прогресс-бара
         if percent > 0 {
             let fillWidth = max(6, CGFloat(percent / 100.0) * barWidth)
-            let fillRect = NSRect(x: 145, y: barY, width: fillWidth, height: 6)
+            let fillRect = NSRect(x: barX, y: barY, width: fillWidth, height: 6)
             let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3)
             barColor.set()
             fillPath.fill()
@@ -561,6 +650,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     
     struct AccountQuota {
         let email: String
+        let alias: String
         let status: String
         var limits5h: LimitInfo?
         var limitsWeekly: LimitInfo?
@@ -594,31 +684,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for item in json {
             guard let email = item["email"] as? String,
                   let status = item["status"] as? String else { continue }
-                  
-            var quota = AccountQuota(email: email, status: status, limits5h: nil, limitsWeekly: nil)
+            
+            let alias = item["alias"] as? String ?? email
+            var quota = AccountQuota(email: email, alias: alias, status: status, limits5h: nil, limitsWeekly: nil)
             
             if status == "ok",
                let quotasDict = item["quotas"] as? [String: Any],
                let groups = quotasDict["groups"] as? [[String: Any]] {
                
-                let geminiGroups = groups.filter { g in
+                // Сначала ищем группу с "gemini", если нет (как у Ultra) — берем первую доступную
+                var targetGroup = groups.first(where: { g in
                     if let name = g["displayName"] as? String {
                         return name.lowercased().contains("gemini")
                     }
                     return false
+                })
+                if targetGroup == nil {
+                    targetGroup = groups.first
                 }
                 
-                if let group = geminiGroups.first,
+                if let group = targetGroup,
                    let limits = group["limits"] as? [String: Any] {
                    
                     if let h5 = limits["5h"] as? [String: Any] {
-                        let dName = h5["displayName"] as? String ?? "Five Hour Limit"
+                        let dName = h5["displayName"] as? String ?? "5-часовой лимит"
                         let used = h5["used_percent"] as? Int ?? 0
                         let desc = h5["description"] as? String ?? ""
                         quota.limits5h = LimitInfo(displayName: dName, usedPercent: used, description: desc)
                     }
                     if let weekly = limits["weekly"] as? [String: Any] {
-                        let dName = weekly["displayName"] as? String ?? "Weekly Limit"
+                        let dName = weekly["displayName"] as? String ?? "Недельный лимит"
                         let used = weekly["used_percent"] as? Int ?? 0
                         let desc = weekly["description"] as? String ?? ""
                         quota.limitsWeekly = LimitInfo(displayName: dName, usedPercent: used, description: desc)
@@ -628,7 +723,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             result.append(quota)
         }
         
-        result.sort { sortKey(email1: $0.email) < sortKey(email1: $1.email) }
+        // Аргон всегда первый, далее сортировка по алиасу 1..7
+        result.sort {
+            let isArgon0 = $0.alias.contains("ARGON") || $0.email.lowercased().contains("dioxintt@gmail.com")
+            let isArgon1 = $1.alias.contains("ARGON") || $1.email.lowercased().contains("dioxintt@gmail.com")
+            if isArgon0 != isArgon1 {
+                return isArgon0
+            }
+            return $0.alias < $1.alias
+        }
         return result
     }
     
@@ -766,12 +869,70 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let accounts = loadAccounts()
         let activeEmail = getActiveEmail(accounts: accounts)
         
-        // 1. Сводные общие лимиты
+        // Разделяем: Аргон vs Воркеры
+        let isArgon: (AccountQuota) -> Bool = { q in
+            q.alias.contains("ARGON") || q.email.lowercased().contains("dioxintt@gmail.com")
+        }
+        
+        let argonAccount = quotas.first(where: isArgon)
+        let workerQuotas = quotas.filter { !isArgon($0) }
+        
+        let emailToDbValue = accounts.reduce(into: [String: String]()) { dict, acc in
+            if let email = acc["email"] as? String, let dbVal = acc["db_value"] as? String {
+                dict[email.lowercased()] = dbVal
+            }
+        }
+        
+        // ==========================================
+        // 1. СЕКЦИЯ АРГОНА (НА САМОМ ВЕРХУ С КАЙМОЙ)
+        // ==========================================
+        if let argon = argonAccount {
+            let argonItem = NSMenuItem()
+            let argonCard = ArgonCardView(title: "ARGON (Google AI Ultra)", email: argon.email)
+            argonItem.view = argonCard
+            argonItem.target = self
+            argonItem.action = #selector(switchAccountClicked(_:))
+            argonItem.representedObject = argon.email
+            menu.addItem(argonItem)
+            
+            // Отдельные лимиты Аргона
+            let argonColor = colorPurple
+            if let h5 = argon.limits5h {
+                let itemH5 = NSMenuItem()
+                itemH5.view = QuotaProgressView(
+                    title: "5-часовой лимит (Argon)",
+                    percent: Double(h5.usedPercent),
+                    iconName: "clock.fill",
+                    iconColor: argonColor,
+                    barColor: argonColor,
+                    timeRemaining: h5.usedPercent < 100 ? formatTimeRemaining(h5.description) : ""
+                )
+                menu.addItem(itemH5)
+            }
+            if let weekly = argon.limitsWeekly {
+                let itemW = NSMenuItem()
+                itemW.view = QuotaProgressView(
+                    title: "Недельный лимит (Argon)",
+                    percent: Double(weekly.usedPercent),
+                    iconName: "calendar",
+                    iconColor: argonColor,
+                    barColor: argonColor,
+                    timeRemaining: weekly.usedPercent < 100 ? formatTimeRemaining(weekly.description) : ""
+                )
+                menu.addItem(itemW)
+            }
+            
+            menu.addItem(NSMenuItem.separator())
+        }
+        
+        // ==========================================
+        // 2. ОБЩИЕ ЛИМИТЫ (СТРОГО ПО ВОРКЕРАМ 1–7)
+        // ==========================================
         var totalWeekly = 0
         var total5h = 0
         var validCount = 0
         
-        for q in quotas {
+        for q in workerQuotas {
             if q.status == "ok", let w = q.limitsWeekly, let h5 = q.limits5h {
                 let weeklyPercent = w.usedPercent
                 var fiveHourPercent = h5.usedPercent
@@ -788,37 +949,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let avgWeekly = Double(totalWeekly) / Double(validCount)
             let avg5h = Double(total5h) / Double(validCount)
             
-            // Заголовок общей секции выровнен по левому краю с помощью MenuHeaderView
             let headerItem = NSMenuItem()
             headerItem.view = MenuHeaderView(
-                title: "ОБЩИЕ ЛИМИТЫ",
+                title: "ОБЩИЕ ЛИМИТЫ (ВОРКЕРЫ 1–7)",
                 iconName: "chart.bar.doc.horizontal.fill",
                 iconColor: colorPurple,
                 textColor: colorPurple
             )
             menu.addItem(headerItem)
             
-            // Планка Five Hour Limit
             let item5h = NSMenuItem()
-            item5h.view = QuotaProgressView(title: "Five Hour Limit", percent: avg5h, iconName: "clock", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
+            item5h.view = QuotaProgressView(title: "5-часовой лимит", percent: avg5h, iconName: "clock", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
             menu.addItem(item5h)
             
-            // Планка Weekly Limit
             let itemWeekly = NSMenuItem()
-            itemWeekly.view = QuotaProgressView(title: "Weekly Limit", percent: avgWeekly, iconName: "calendar", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
+            itemWeekly.view = QuotaProgressView(title: "Недельный лимит", percent: avgWeekly, iconName: "calendar", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
             menu.addItem(itemWeekly)
             
             menu.addItem(NSMenuItem.separator())
         }
         
-        // 2. Лимиты по каждому аккаунту
-        let emailToDbValue = accounts.reduce(into: [String: String]()) { dict, acc in
-            if let email = acc["email"] as? String, let dbVal = acc["db_value"] as? String {
-                dict[email.lowercased()] = dbVal
-            }
-        }
+        // ==========================================
+        // 3. СПИСОК ВОРКЕРОВ (ПО ОТДЕЛЬНОСТИ 1–7)
+        // ==========================================
+        let workersHeader = NSMenuItem()
+        workersHeader.view = MenuHeaderView(
+            title: "АККАУНТЫ ВОРКЕРОВ",
+            iconName: "person.3.fill",
+            iconColor: NSColor.secondaryLabelColor,
+            textColor: NSColor.secondaryLabelColor
+        )
+        menu.addItem(workersHeader)
         
-        for (idx, q) in quotas.enumerated() {
+        for (idx, q) in workerQuotas.enumerated() {
             if idx > 0 {
                 menu.addItem(NSMenuItem.separator())
             }
@@ -827,11 +990,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let isActive = (activeEmail?.lowercased() == emailLower)
             let dbValue = emailToDbValue[emailLower]
             
-            // Название аккаунта (стандартный NSMenuItem с иконкой для нативной синей подсветки при наведении)
             let emailItem: NSMenuItem
+            let displayTitle = q.alias.isEmpty ? q.email : q.alias
+            
             if isActive {
                 emailItem = createStyledItem(
-                    title: q.email,
+                    title: displayTitle,
                     fontName: "System",
                     fontSize: 13,
                     color: colorGreen,
@@ -839,9 +1003,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     sfColor: colorGreen
                 )
             } else if dbValue != nil {
-                // Активная строка-кнопка для входа
                 emailItem = createStyledItem(
-                    title: q.email,
+                    title: displayTitle,
                     fontName: "System",
                     fontSize: 13,
                     color: NSColor.labelColor,
@@ -852,7 +1015,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
             } else {
                 emailItem = createStyledItem(
-                    title: q.email,
+                    title: displayTitle,
                     fontName: "System",
                     fontSize: 13,
                     color: NSColor.secondaryLabelColor,
@@ -881,9 +1044,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 continue
             }
             
-            // Вывод лимитов
             let weeklyPercent = q.limitsWeekly?.usedPercent ?? 100
-            
             var timeRem5h = ""
             var timeRemWeekly = ""
             
@@ -901,11 +1062,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if weeklyPercent < 10 {
                     used = 0
                 }
-                
                 let limitColor = getLimitColor(percent: Int(used))
                 let itemH5 = NSMenuItem()
                 itemH5.view = QuotaProgressView(
-                    title: "Five Hour Limit",
+                    title: "5-часовой лимит",
                     percent: used,
                     iconName: "clock",
                     iconColor: NSColor.secondaryLabelColor,
@@ -919,7 +1079,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let limitColor = getLimitColor(percent: weekly.usedPercent)
                 let itemW = NSMenuItem()
                 itemW.view = QuotaProgressView(
-                    title: "Weekly Limit",
+                    title: "Недельный лимит",
                     percent: Double(weekly.usedPercent),
                     iconName: "calendar",
                     iconColor: NSColor.secondaryLabelColor,

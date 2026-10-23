@@ -25,5 +25,13 @@ cp "$APP_DIR/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 # Права доступа
 chmod +x "$APP_BUNDLE/Contents/MacOS/GeminiLimits"
 
+# Синхронизация с системными приложениями
+echo "Установка в /Applications/GeminiLimits.app..."
+rm -rf "/Applications/GeminiLimits.app"
+cp -R "$APP_BUNDLE" "/Applications/GeminiLimits.app"
+
+echo "Подпись кода приложения..."
+codesign --force --deep --sign - "/Applications/GeminiLimits.app"
+
 echo "=== Сборка завершена успешно ==="
-echo "Приложение создано по пути: $APP_BUNDLE"
+echo "Приложение создано и установлено по пути: /Applications/GeminiLimits.app"
