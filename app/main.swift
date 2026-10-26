@@ -145,7 +145,6 @@ class ArgonCardView: NSView {
     let iconView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
     let emailLabel = NSTextField(labelWithString: "")
-    let statusLabel = NSTextField(labelWithString: "")
     
     // 5-часовой лимит
     let icon5h = NSImageView()
@@ -183,7 +182,6 @@ class ArgonCardView: NSView {
         addSubview(iconView)
         addSubview(titleLabel)
         addSubview(emailLabel)
-        addSubview(statusLabel)
         
         // 5h elements
         addSubview(icon5h)
@@ -221,15 +219,6 @@ class ArgonCardView: NSView {
         emailLabel.isEditable = false
         emailLabel.isBordered = false
         emailLabel.drawsBackground = false
-        
-        if isActive {
-            statusLabel.stringValue = "активен"
-            statusLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
-            statusLabel.textColor = NSColor(hex: "#30D158")
-            statusLabel.isEditable = false
-            statusLabel.isBordered = false
-            statusLabel.drawsBackground = false
-        }
         
         // 5h row
         icon5h.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
@@ -296,8 +285,7 @@ class ArgonCardView: NSView {
         // Header
         iconView.frame = NSRect(x: 18, y: h - 24, width: 14, height: 14)
         titleLabel.frame = NSRect(x: 36, y: h - 26, width: 50, height: 18)
-        emailLabel.frame = NSRect(x: 88, y: h - 25, width: 170, height: 16)
-        statusLabel.frame = NSRect(x: w - 75, y: h - 25, width: 55, height: 16)
+        emailLabel.frame = NSRect(x: 88, y: h - 25, width: w - 100, height: 16)
         
         // 5h row
         let row5hY = h - 48
