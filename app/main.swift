@@ -138,6 +138,243 @@ class MenuHeaderView: NSView {
     }
 }
 
+// Кастомный выделенный синей каемкой блок для Argon (Google AI Ultra)
+class ArgonCardView: NSView {
+    override var allowsVibrancy: Bool { return true }
+    
+    let iconView = NSImageView()
+    let titleLabel = NSTextField(labelWithString: "")
+    let emailLabel = NSTextField(labelWithString: "")
+    let statusLabel = NSTextField(labelWithString: "")
+    
+    // 5-часовой лимит
+    let icon5h = NSImageView()
+    let label5h = NSTextField(labelWithString: "5-часовой лимит")
+    let percent5hLabel = NSTextField(labelWithString: "")
+    var percent5h: Double = 100
+    var color5h: NSColor = NSColor(hex: "#0A84FF")
+    
+    // Недельный лимит
+    let iconWeekly = NSImageView()
+    let labelWeekly = NSTextField(labelWithString: "Недельный лимит")
+    let percentWeeklyLabel = NSTextField(labelWithString: "")
+    var percentWeekly: Double = 100
+    var colorWeekly: NSColor = NSColor(hex: "#0A84FF")
+    
+    // Таймер сброса
+    let iconTimer = NSImageView()
+    let labelTimer = NSTextField(labelWithString: "")
+    var hasTimer: Bool = false
+    
+    let borderColor = NSColor(hex: "#0A84FF") // акцентный синий цвет Apple
+    
+    init(email: String, isActive: Bool, percent5h: Double, color5h: NSColor, percentWeekly: Double, colorWeekly: NSColor, timerText: String) {
+        self.hasTimer = !timerText.isEmpty
+        self.percent5h = percent5h
+        self.color5h = color5h
+        self.percentWeekly = percentWeekly
+        self.colorWeekly = colorWeekly
+        
+        let cardHeight: CGFloat = hasTimer ? 98 : 78
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: cardHeight))
+        self.autoresizingMask = [.width]
+        
+        // Header elements
+        addSubview(iconView)
+        addSubview(titleLabel)
+        addSubview(emailLabel)
+        addSubview(statusLabel)
+        
+        // 5h elements
+        addSubview(icon5h)
+        addSubview(label5h)
+        addSubview(percent5hLabel)
+        
+        // Weekly elements
+        addSubview(iconWeekly)
+        addSubview(labelWeekly)
+        addSubview(percentWeeklyLabel)
+        
+        if hasTimer {
+            addSubview(iconTimer)
+            addSubview(labelTimer)
+        }
+        
+        // Setup Icon & Title
+        let iconName = isActive ? "checkmark.circle.fill" : "person.crop.circle.fill"
+        let iconColor = isActive ? NSColor(hex: "#30D158") : borderColor
+        iconView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
+        if #available(macOS 12.0, *) {
+            iconView.image = iconView.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [iconColor]))
+        }
+        
+        titleLabel.stringValue = "Argon"
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 13)
+        titleLabel.textColor = NSColor.labelColor
+        titleLabel.isEditable = false
+        titleLabel.isBordered = false
+        titleLabel.drawsBackground = false
+        
+        emailLabel.stringValue = email
+        emailLabel.font = NSFont.systemFont(ofSize: 11)
+        emailLabel.textColor = NSColor.secondaryLabelColor
+        emailLabel.isEditable = false
+        emailLabel.isBordered = false
+        emailLabel.drawsBackground = false
+        
+        if isActive {
+            statusLabel.stringValue = "активен"
+            statusLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+            statusLabel.textColor = NSColor(hex: "#30D158")
+            statusLabel.isEditable = false
+            statusLabel.isBordered = false
+            statusLabel.drawsBackground = false
+        }
+        
+        // 5h row
+        icon5h.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
+        if #available(macOS 12.0, *) {
+            icon5h.image = icon5h.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [borderColor]))
+        }
+        label5h.font = NSFont.systemFont(ofSize: 12)
+        label5h.textColor = NSColor.labelColor
+        label5h.isEditable = false
+        label5h.isBordered = false
+        label5h.drawsBackground = false
+        
+        percent5hLabel.stringValue = "\(Int(round(percent5h)))%"
+        percent5hLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        percent5hLabel.textColor = NSColor.secondaryLabelColor
+        percent5hLabel.alignment = .right
+        percent5hLabel.isEditable = false
+        percent5hLabel.isBordered = false
+        percent5hLabel.drawsBackground = false
+        
+        // Weekly row
+        iconWeekly.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)
+        if #available(macOS 12.0, *) {
+            iconWeekly.image = iconWeekly.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [borderColor]))
+        }
+        labelWeekly.font = NSFont.systemFont(ofSize: 12)
+        labelWeekly.textColor = NSColor.labelColor
+        labelWeekly.isEditable = false
+        labelWeekly.isBordered = false
+        labelWeekly.drawsBackground = false
+        
+        percentWeeklyLabel.stringValue = "\(Int(round(percentWeekly)))%"
+        percentWeeklyLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        percentWeeklyLabel.textColor = NSColor.secondaryLabelColor
+        percentWeeklyLabel.alignment = .right
+        percentWeeklyLabel.isEditable = false
+        percentWeeklyLabel.isBordered = false
+        percentWeeklyLabel.drawsBackground = false
+        
+        // Timer row
+        if hasTimer {
+            iconTimer.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
+            if #available(macOS 12.0, *) {
+                iconTimer.image = iconTimer.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [NSColor.secondaryLabelColor]))
+            }
+            labelTimer.stringValue = timerText
+            labelTimer.font = NSFont.systemFont(ofSize: 11)
+            labelTimer.textColor = NSColor.secondaryLabelColor
+            labelTimer.isEditable = false
+            labelTimer.isBordered = false
+            labelTimer.drawsBackground = false
+        }
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func layout() {
+        super.layout()
+        let w = bounds.width
+        let h = bounds.height
+        
+        // Header
+        iconView.frame = NSRect(x: 18, y: h - 24, width: 14, height: 14)
+        titleLabel.frame = NSRect(x: 36, y: h - 26, width: 50, height: 18)
+        emailLabel.frame = NSRect(x: 88, y: h - 25, width: 170, height: 16)
+        statusLabel.frame = NSRect(x: w - 75, y: h - 25, width: 55, height: 16)
+        
+        // 5h row
+        let row5hY = h - 48
+        icon5h.frame = NSRect(x: 18, y: row5hY, width: 13, height: 13)
+        label5h.frame = NSRect(x: 36, y: row5hY - 2, width: 120, height: 16)
+        percent5hLabel.frame = NSRect(x: w - 50, y: row5hY - 2, width: 35, height: 16)
+        
+        // Weekly row
+        let rowWY: CGFloat = hasTimer ? (h - 70) : 8
+        iconWeekly.frame = NSRect(x: 18, y: rowWY, width: 13, height: 13)
+        labelWeekly.frame = NSRect(x: 36, y: rowWY - 2, width: 120, height: 16)
+        percentWeeklyLabel.frame = NSRect(x: w - 50, y: rowWY - 2, width: 35, height: 16)
+        
+        // Timer row
+        if hasTimer {
+            iconTimer.frame = NSRect(x: 18, y: 7, width: 12, height: 12)
+            labelTimer.frame = NSRect(x: 36, y: 5, width: w - 55, height: 14)
+        }
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        let w = bounds.width
+        let h = bounds.height
+        let insetRect = NSRect(x: 8, y: 3, width: w - 16, height: h - 6)
+        let borderPath = NSBezierPath(roundedRect: insetRect, xRadius: 8, yRadius: 8)
+        
+        // Легкая подложка
+        borderColor.withAlphaComponent(0.08).setFill()
+        borderPath.fill()
+        
+        // Четкая синяя каемочка
+        borderColor.withAlphaComponent(0.85).setStroke()
+        borderPath.lineWidth = 1.4
+        borderPath.stroke()
+        
+        let barX: CGFloat = 160
+        let barWidth = w - barX - 55
+        
+        // 5h прогресс-бар
+        let row5hY = h - 48
+        let bar5hY = row5hY + 3
+        let track5h = NSRect(x: barX, y: bar5hY, width: barWidth, height: 6)
+        NSColor.quaternaryLabelColor.set()
+        NSBezierPath(roundedRect: track5h, xRadius: 3, yRadius: 3).fill()
+        if percent5h > 0 {
+            let fillWidth = max(6, CGFloat(percent5h / 100.0) * barWidth)
+            color5h.set()
+            NSBezierPath(roundedRect: NSRect(x: barX, y: bar5hY, width: fillWidth, height: 6), xRadius: 3, yRadius: 3).fill()
+        }
+        
+        // Weekly прогресс-бар
+        let rowWY: CGFloat = hasTimer ? (h - 70) : 8
+        let barWY = rowWY + 3
+        let trackW = NSRect(x: barX, y: barWY, width: barWidth, height: 6)
+        NSColor.quaternaryLabelColor.set()
+        NSBezierPath(roundedRect: trackW, xRadius: 3, yRadius: 3).fill()
+        if percentWeekly > 0 {
+            let fillWidth = max(6, CGFloat(percentWeekly / 100.0) * barWidth)
+            colorWeekly.set()
+            NSBezierPath(roundedRect: NSRect(x: barX, y: barWY, width: fillWidth, height: 6), xRadius: 3, yRadius: 3).fill()
+        }
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        if let menuItem = self.enclosingMenuItem {
+            if menuItem.isEnabled, let action = menuItem.action, let target = menuItem.target {
+                _ = target.perform(action, with: menuItem)
+                menuItem.menu?.cancelTracking()
+            }
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
+}
+
 // Кастомный графический прогресс-бар в стиле Apple
 class QuotaProgressView: NSView {
     override var allowsVibrancy: Bool {
@@ -1111,12 +1348,73 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let accounts = loadAccounts()
         let activeEmail = getActiveEmail(accounts: accounts)
         
-        // 1. Сводные общие лимиты
+        let emailToDbValue = accounts.reduce(into: [String: String]()) { dict, acc in
+            if let email = acc["email"] as? String, let dbVal = acc["db_value"] as? String {
+                dict[email.lowercased()] = dbVal
+            }
+        }
+        let emailToAlias = accounts.reduce(into: [String: String]()) { dict, acc in
+            if let email = acc["email"] as? String, let alias = acc["alias"] as? String {
+                dict[email.lowercased()] = alias
+            }
+        }
+        
+        // Разделяем Argon и воркеров (1-7)
+        let argonQuota = quotas.first { $0.email.lowercased() == "dioxintt@gmail.com" }
+        let workerQuotas = quotas.filter { $0.email.lowercased() != "dioxintt@gmail.com" }
+        
+        // 1. Блок Argon (Google AI Ultra), выделенный синей каемкой над общими лимитами
+        if let argon = argonQuota {
+            let emailLower = argon.email.lowercased()
+            let isActive = (activeEmail?.lowercased() == emailLower)
+            
+            let weeklyPercent = argon.limitsWeekly?.usedPercent ?? 100
+            var timeRemWeekly = ""
+            if let weekly = argon.limitsWeekly {
+                let desc = weekly.usedPercent < 100 ? weekly.description : ""
+                timeRemWeekly = formatTimeRemaining(desc)
+            }
+            
+            var used5h: Double = 100
+            var color5h = NSColor(hex: "#0A84FF")
+            if let h5 = argon.limits5h {
+                used5h = Double(h5.usedPercent)
+                if weeklyPercent < 10 { used5h = 0 }
+                color5h = getLimitColor(percent: Int(used5h))
+            }
+            
+            var usedWeekly: Double = 100
+            var colorWeekly = NSColor(hex: "#0A84FF")
+            if let w = argon.limitsWeekly {
+                usedWeekly = Double(w.usedPercent)
+                colorWeekly = getLimitColor(percent: Int(w.usedPercent))
+            }
+            
+            let cardView = ArgonCardView(
+                email: argon.email,
+                isActive: isActive,
+                percent5h: used5h,
+                color5h: color5h,
+                percentWeekly: usedWeekly,
+                colorWeekly: colorWeekly,
+                timerText: timeRemWeekly
+            )
+            
+            let argonItem = NSMenuItem()
+            argonItem.view = cardView
+            argonItem.target = self
+            argonItem.action = #selector(switchAccountClicked(_:))
+            argonItem.representedObject = argon.email
+            menu.addItem(argonItem)
+            menu.addItem(NSMenuItem.separator())
+        }
+        
+        // 2. Сводные общие лимиты (строго по воркерам 1-7, Аргон исключен)
         var totalWeekly = 0
         var total5h = 0
         var validCount = 0
         
-        for q in quotas {
+        for q in workerQuotas {
             if q.status == "ok", let w = q.limitsWeekly, let h5 = q.limits5h {
                 let weeklyPercent = w.usedPercent
                 var fiveHourPercent = h5.usedPercent
@@ -1133,22 +1431,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let avgWeekly = Double(totalWeekly) / Double(validCount)
             let avg5h = Double(total5h) / Double(validCount)
             
-            // Заголовок общей секции выровнен по левому краю с помощью MenuHeaderView
             let headerItem = NSMenuItem()
             headerItem.view = MenuHeaderView(
-                title: "ОБЩИЕ ЛИМИТЫ",
+                title: "ОБЩИЕ ЛИМИТЫ (ВОРКЕРЫ 1-7)",
                 iconName: "chart.bar.doc.horizontal.fill",
                 iconColor: colorPurple,
                 textColor: colorPurple
             )
             menu.addItem(headerItem)
             
-            // Планка 5-часовой лимит
             let item5h = NSMenuItem()
             item5h.view = QuotaProgressView(title: "5-часовой лимит", percent: avg5h, iconName: "clock", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
             menu.addItem(item5h)
             
-            // Планка Недельный лимит
             let itemWeekly = NSMenuItem()
             itemWeekly.view = QuotaProgressView(title: "Недельный лимит", percent: avgWeekly, iconName: "calendar", iconColor: colorPurple, barColor: colorPurple, timeRemaining: "")
             menu.addItem(itemWeekly)
@@ -1156,14 +1451,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem.separator())
         }
         
-        // 2. Лимиты по каждому аккаунту
-        let emailToDbValue = accounts.reduce(into: [String: String]()) { dict, acc in
-            if let email = acc["email"] as? String, let dbVal = acc["db_value"] as? String {
-                dict[email.lowercased()] = dbVal
-            }
-        }
+        // 3. Лимиты по каждому аккаунту воркера
+        let workersHeader = NSMenuItem()
+        workersHeader.view = MenuHeaderView(
+            title: "АККАУНТЫ ВОРКЕРОВ",
+            iconName: "person.3.fill",
+            iconColor: NSColor.secondaryLabelColor,
+            textColor: NSColor.secondaryLabelColor
+        )
+        menu.addItem(workersHeader)
         
-        for (idx, q) in quotas.enumerated() {
+        for (idx, q) in workerQuotas.enumerated() {
             if idx > 0 {
                 menu.addItem(NSMenuItem.separator())
             }
@@ -1171,12 +1469,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let emailLower = q.email.lowercased()
             let isActive = (activeEmail?.lowercased() == emailLower)
             let dbValue = emailToDbValue[emailLower]
+            let displayTitle = emailToAlias[emailLower] ?? q.email
             
-            // Название аккаунта (стандартный NSMenuItem с иконкой для нативной синей подсветки при наведении)
             let emailItem: NSMenuItem
             if isActive {
                 emailItem = createStyledItem(
-                    title: q.email,
+                    title: displayTitle,
                     fontName: "System",
                     fontSize: 13,
                     color: colorGreen,
@@ -1184,9 +1482,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     sfColor: colorGreen
                 )
             } else if dbValue != nil {
-                // Активная строка-кнопка для входа
                 emailItem = createStyledItem(
-                    title: q.email,
+                    title: displayTitle,
                     fontName: "System",
                     fontSize: 13,
                     color: NSColor.labelColor,
@@ -1197,7 +1494,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
             } else {
                 emailItem = createStyledItem(
-                    title: q.email,
+                    title: displayTitle,
                     fontName: "System",
                     fontSize: 13,
                     color: NSColor.secondaryLabelColor,
