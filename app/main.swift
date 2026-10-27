@@ -160,21 +160,29 @@ class ArgonCardView: NSView {
     var percentWeekly: Double = 100
     var colorWeekly: NSColor = NSColor(hex: "#0A84FF")
     
-    // Таймер сброса
-    let iconTimer = NSImageView()
-    let labelTimer = NSTextField(labelWithString: "")
-    var hasTimer: Bool = false
+    // Таймеры сброса
+    let iconTimer5h = NSImageView()
+    let labelTimer5h = NSTextField(labelWithString: "")
+    var hasTimer5h: Bool = false
+    
+    let iconTimerWeekly = NSImageView()
+    let labelTimerWeekly = NSTextField(labelWithString: "")
+    var hasTimerWeekly: Bool = false
     
     let borderColor = NSColor(hex: "#0A84FF") // акцентный синий цвет Apple
     
-    init(email: String, isActive: Bool, percent5h: Double, color5h: NSColor, percentWeekly: Double, colorWeekly: NSColor, timerText: String) {
-        self.hasTimer = !timerText.isEmpty
+    init(email: String, isActive: Bool, percent5h: Double, color5h: NSColor, percentWeekly: Double, colorWeekly: NSColor, timer5hText: String = "", timerWeeklyText: String = "") {
+        self.hasTimer5h = !timer5hText.isEmpty
+        self.hasTimerWeekly = !timerWeeklyText.isEmpty
         self.percent5h = percent5h
         self.color5h = color5h
         self.percentWeekly = percentWeekly
         self.colorWeekly = colorWeekly
         
-        let cardHeight: CGFloat = hasTimer ? 98 : 78
+        var timerCount = 0
+        if hasTimer5h { timerCount += 1 }
+        if hasTimerWeekly { timerCount += 1 }
+        let cardHeight: CGFloat = 78 + CGFloat(timerCount * 20)
         super.init(frame: NSRect(x: 0, y: 0, width: 360, height: cardHeight))
         self.autoresizingMask = [.width]
         
@@ -187,15 +195,18 @@ class ArgonCardView: NSView {
         addSubview(icon5h)
         addSubview(label5h)
         addSubview(percent5hLabel)
+        if hasTimer5h {
+            addSubview(iconTimer5h)
+            addSubview(labelTimer5h)
+        }
         
         // Weekly elements
         addSubview(iconWeekly)
         addSubview(labelWeekly)
         addSubview(percentWeeklyLabel)
-        
-        if hasTimer {
-            addSubview(iconTimer)
-            addSubview(labelTimer)
+        if hasTimerWeekly {
+            addSubview(iconTimerWeekly)
+            addSubview(labelTimerWeekly)
         }
         
         // Setup Icon & Title
@@ -239,6 +250,20 @@ class ArgonCardView: NSView {
         percent5hLabel.isBordered = false
         percent5hLabel.drawsBackground = false
         
+        // 5h Timer row
+        if hasTimer5h {
+            iconTimer5h.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
+            if #available(macOS 12.0, *) {
+                iconTimer5h.image = iconTimer5h.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [NSColor.secondaryLabelColor]))
+            }
+            labelTimer5h.stringValue = timer5hText
+            labelTimer5h.font = NSFont.systemFont(ofSize: 11)
+            labelTimer5h.textColor = NSColor.secondaryLabelColor
+            labelTimer5h.isEditable = false
+            labelTimer5h.isBordered = false
+            labelTimer5h.drawsBackground = false
+        }
+        
         // Weekly row
         iconWeekly.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)
         if #available(macOS 12.0, *) {
@@ -258,18 +283,18 @@ class ArgonCardView: NSView {
         percentWeeklyLabel.isBordered = false
         percentWeeklyLabel.drawsBackground = false
         
-        // Timer row
-        if hasTimer {
-            iconTimer.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
+        // Weekly Timer row
+        if hasTimerWeekly {
+            iconTimerWeekly.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
             if #available(macOS 12.0, *) {
-                iconTimer.image = iconTimer.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [NSColor.secondaryLabelColor]))
+                iconTimerWeekly.image = iconTimerWeekly.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [NSColor.secondaryLabelColor]))
             }
-            labelTimer.stringValue = timerText
-            labelTimer.font = NSFont.systemFont(ofSize: 11)
-            labelTimer.textColor = NSColor.secondaryLabelColor
-            labelTimer.isEditable = false
-            labelTimer.isBordered = false
-            labelTimer.drawsBackground = false
+            labelTimerWeekly.stringValue = timerWeeklyText
+            labelTimerWeekly.font = NSFont.systemFont(ofSize: 11)
+            labelTimerWeekly.textColor = NSColor.secondaryLabelColor
+            labelTimerWeekly.isEditable = false
+            labelTimerWeekly.isBordered = false
+            labelTimerWeekly.drawsBackground = false
         }
     }
     
@@ -293,16 +318,23 @@ class ArgonCardView: NSView {
         label5h.frame = NSRect(x: 36, y: row5hY - 2, width: 120, height: 16)
         percent5hLabel.frame = NSRect(x: w - 50, y: row5hY - 2, width: 35, height: 16)
         
+        // 5h timer row
+        if hasTimer5h {
+            iconTimer5h.frame = NSRect(x: 18, y: h - 65, width: 12, height: 12)
+            labelTimer5h.frame = NSRect(x: 36, y: h - 67, width: w - 55, height: 14)
+        }
+        
         // Weekly row
-        let rowWY: CGFloat = hasTimer ? (h - 70) : 8
+        let rowWY: CGFloat = hasTimer5h ? (h - 88) : (h - 70)
         iconWeekly.frame = NSRect(x: 18, y: rowWY, width: 13, height: 13)
         labelWeekly.frame = NSRect(x: 36, y: rowWY - 2, width: 120, height: 16)
         percentWeeklyLabel.frame = NSRect(x: w - 50, y: rowWY - 2, width: 35, height: 16)
         
-        // Timer row
-        if hasTimer {
-            iconTimer.frame = NSRect(x: 18, y: 7, width: 12, height: 12)
-            labelTimer.frame = NSRect(x: 36, y: 5, width: w - 55, height: 14)
+        // Weekly timer row
+        if hasTimerWeekly {
+            let timerWY = rowWY - 18
+            iconTimerWeekly.frame = NSRect(x: 18, y: timerWY + 1, width: 12, height: 12)
+            labelTimerWeekly.frame = NSRect(x: 36, y: timerWY - 1, width: w - 55, height: 14)
         }
     }
     
@@ -339,7 +371,7 @@ class ArgonCardView: NSView {
         }
         
         // Weekly прогресс-бар
-        let rowWY: CGFloat = hasTimer ? (h - 70) : 8
+        let rowWY: CGFloat = hasTimer5h ? (h - 88) : (h - 70)
         let barWY = rowWY + 3
         let trackW = NSRect(x: barX, y: barWY, width: barWidth, height: 6)
         NSColor.quaternaryLabelColor.set()
@@ -1357,7 +1389,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let isActive = (activeEmail?.lowercased() == emailLower)
             
             let weeklyPercent = argon.limitsWeekly?.usedPercent ?? 100
+            
+            var timeRem5h = ""
             var timeRemWeekly = ""
+            
+            if let h5 = argon.limits5h {
+                let desc = weeklyPercent < 10 ? "Недельный лимит исчерпан" : (h5.usedPercent < 100 ? h5.description : "")
+                timeRem5h = formatTimeRemaining(desc)
+            }
             if let weekly = argon.limitsWeekly {
                 let desc = weekly.usedPercent < 100 ? weekly.description : ""
                 timeRemWeekly = formatTimeRemaining(desc)
@@ -1385,7 +1424,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 color5h: color5h,
                 percentWeekly: usedWeekly,
                 colorWeekly: colorWeekly,
-                timerText: timeRemWeekly
+                timer5hText: timeRem5h,
+                timerWeeklyText: timeRemWeekly
             )
             
             let argonItem = NSMenuItem()
