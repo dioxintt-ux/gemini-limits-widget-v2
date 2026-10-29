@@ -46,20 +46,17 @@ def refresh_access_token(client_id, client_secret, refresh_token):
         return None
     return response.json().get("access_token")
 
-def query_google_api(access_token, endpoint, base_url=None):
+def query_google_api(access_token, endpoint, base_url=None, payload=None):
     if not base_url:
-        if endpoint == "retrieveUserQuotaSummary":
-            base_url = "https://cloudcode-pa.googleapis.com"
-        else:
-            base_url = "https://daily-cloudcode-pa.googleapis.com"
+        base_url = "https://daily-cloudcode-pa.googleapis.com"
     url = f"{base_url}/v1internal:{endpoint}"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
-        "User-Agent": "Antigravity-Limits-Fetcher/1.0.0"
+        "User-Agent": "antigravity/cli/1.4.10 (aidev_client; os_type=darwin; arch=arm64; cl=1009308193; auth_method=consumer)"
     }
     try:
-        response = requests.post(url, json={}, headers=headers, timeout=10)
+        response = requests.post(url, json=payload if payload is not None else {}, headers=headers, timeout=10)
         print(f"\n--- Отладочные заголовки для {endpoint} ---")
         for k, v in response.headers.items():
             print(f"  {k}: {v}")
@@ -109,13 +106,19 @@ def generate_desc_from_reset_time(reset_time_str):
 def get_ide_language_server_quotas():
     try:
         ps_out = subprocess.check_output(["ps", "aux"], stderr=subprocess.DEVNULL).decode("utf-8", errors="ignore")
-        csrf_match = re.search(r"--csrf_token\s+([a-f0-9\-]+)", ps_out)
+        csrf_match = re.search(r"--csrf_token[=\s]+([a-f0-9\-]+)", ps_out)
         if not csrf_match:
             return None
         csrf_token = csrf_match.group(1)
 
-        lsof_out = subprocess.check_output(["lsof", "-Pan", "-c", "language_server_macos_arm", "-i"], stderr=subprocess.DEVNULL).decode("utf-8", errors="ignore")
-        ports = re.findall(r":(\d+)\s+\(LISTEN\)", lsof_out)
+        ports = re.findall(r"--hub-port[=\s]+(\d+)", ps_out)
+        try:
+            lsof_out = subprocess.check_output(["lsof", "-Pan", "-c", "language_server_macos_arm", "-c", "agy", "-i"], stderr=subprocess.DEVNULL).decode("utf-8", errors="ignore")
+            for p in re.findall(r":(\d+)\s+\(LISTEN\)", lsof_out):
+                if p not in ports:
+                    ports.append(p)
+        except Exception:
+            pass
         if not ports:
             return None
 
@@ -126,29 +129,30 @@ def get_ide_language_server_quotas():
         }
 
         for port in ports:
-            try:
-                r_user = requests.post(
-                    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetUserStatus",
-                    headers=headers, json={}, verify=False, timeout=2
-                )
-                if r_user.status_code != 200:
-                    continue
-                email = r_user.json().get("userStatus", {}).get("email")
-                if not email:
-                    continue
+            for scheme in ("http", "https"):
+                try:
+                    r_user = requests.post(
+                        f"{scheme}://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetUserStatus",
+                        headers=headers, json={}, verify=False, timeout=2
+                    )
+                    if r_user.status_code != 200:
+                        continue
+                    email = r_user.json().get("userStatus", {}).get("email")
+                    if not email:
+                        continue
 
-                r_quota = requests.post(
-                    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary",
-                    headers=headers, json={"forceRefresh": True}, verify=False, timeout=3
-                )
-                if r_quota.status_code != 200:
+                    r_quota = requests.post(
+                        f"{scheme}://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary",
+                        headers=headers, json={"forceRefresh": True}, verify=False, timeout=3
+                    )
+                    if r_quota.status_code != 200:
+                        continue
+                    return {
+                        "email": email,
+                        "quota_summary": r_quota.json().get("response", {})
+                    }
+                except Exception:
                     continue
-                return {
-                    "email": email,
-                    "quota_summary": r_quota.json().get("response", {})
-                }
-            except Exception:
-                continue
     except Exception:
         pass
     return None
@@ -170,9 +174,10 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
     if models_data and isinstance(models_data, dict):
         models_dict = models_data.get("models", {})
         for m_id, m_val in models_dict.items():
-            if ("gemini" in m_id or m_val.get("modelProvider") == "MODEL_PROVIDER_GOOGLE") and m_val.get("quotaInfo"):
-                gemini_quota_info = m_val["quotaInfo"]
-                break
+            if m_id.startswith("gemini-") and m_val.get("quotaInfo"):
+                q_info = m_val["quotaInfo"]
+                if gemini_quota_info is None or q_info.get("remainingFraction", 1.0) < gemini_quota_info.get("remainingFraction", 1.0):
+                    gemini_quota_info = q_info
 
     if gemini_quota_info:
         remaining_fraction = gemini_quota_info.get("remainingFraction", 1.0)
@@ -217,13 +222,15 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                             "description": w_desc
                         }
                     elif w_window == "5h":
-                        gemini_group["limits"]["5h"] = {
-                            "displayName": b.get("displayName", "Five Hour Limit Remaining"),
-                            "remaining_fraction": w_fraction,
-                            "used_percent": w_percent,
-                            "reset_time": w_reset,
-                            "description": w_desc
-                        }
+                        cur_5h = gemini_group["limits"].get("5h", {})
+                        if w_fraction <= cur_5h.get("remaining_fraction", 1.0) or not cur_5h.get("reset_time"):
+                            gemini_group["limits"]["5h"] = {
+                                "displayName": b.get("displayName", "Five Hour Limit Remaining"),
+                                "remaining_fraction": w_fraction,
+                                "used_percent": w_percent,
+                                "reset_time": w_reset,
+                                "description": w_desc
+                            }
                 break
 
         # Гарантируем наличие weekly лимита, чтобы SwiftBar виджет не скрывал строку и корректно рассчитывал средние значения
@@ -437,16 +444,17 @@ def main():
             continue
             
         print("Запрос loadCodeAssist...")
-        load_assist = query_google_api(access_token, "loadCodeAssist")
+        load_assist = query_google_api(access_token, "loadCodeAssist", payload={"metadata": {"ideType": "ANTIGRAVITY"}})
         print("Запрос fetchAvailableModels...")
         models = query_google_api(access_token, "fetchAvailableModels")
 
-        if ide_quota_data and ide_quota_data.get("email") == email and ide_quota_data.get("quota_summary"):
+        project_id = (load_assist or {}).get("cloudaicompanionProject", "aicode-consumers")
+        print("Запрос retrieveUserQuotaSummary...")
+        quota_summary = query_google_api(access_token, "retrieveUserQuotaSummary", payload={"project": project_id})
+        has_gemini_group = any("gemini" in g.get("displayName", "").lower() for g in (quota_summary or {}).get("groups", []))
+        if not has_gemini_group and ide_quota_data and ide_quota_data.get("email") == email and ide_quota_data.get("quota_summary"):
             quota_summary = ide_quota_data["quota_summary"]
             print(f"  Используются live квоты Gemini из Language Server для {email}")
-        else:
-            print("Запрос retrieveUserQuotaSummary...")
-            quota_summary = query_google_api(access_token, "retrieveUserQuotaSummary")
         
         if load_assist:
             debug_la_path = os.path.join(dir_path, f"debug_loadCodeAssist_{email}.json")
