@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Загружаем учетные данные из файла .env (чтобы не хранить секреты в репозитории)
-DEFAULT_CLIENT_ID = ""
-DEFAULT_CLIENT_SECRET = ""
+DEFAULT_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+DEFAULT_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 if os.path.exists(env_path):
@@ -29,8 +29,9 @@ if os.path.exists(env_path):
                     DEFAULT_CLIENT_SECRET = v
 
 if not DEFAULT_CLIENT_ID or not DEFAULT_CLIENT_SECRET:
-    print("Ошибка: Укажите GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в файле .env")
-    sys.exit(1)
+    if __name__ == "__main__":
+        print("Ошибка: Укажите GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в файле .env")
+        sys.exit(1)
 
 def refresh_access_token(client_id, client_secret, refresh_token):
     url = "https://oauth2.googleapis.com/token"
@@ -47,7 +48,7 @@ def refresh_access_token(client_id, client_secret, refresh_token):
     return response.json().get("access_token")
 
 def query_google_api(access_token, endpoint, base_url=None, payload=None):
-    if not base_url:
+    if not base_url or (base_url == "https://cloudcode-pa.googleapis.com" and endpoint == "retrieveUserQuotaSummary"):
         base_url = "https://daily-cloudcode-pa.googleapis.com"
     url = f"{base_url}/v1internal:{endpoint}"
     headers = {
@@ -182,6 +183,8 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
     if gemini_quota_info:
         remaining_fraction = gemini_quota_info.get("remainingFraction", 1.0)
         remaining_percent = int(round(remaining_fraction * 100))
+        if remaining_fraction < 1.0 and remaining_percent >= 100:
+            remaining_percent = 99
         reset_time = gemini_quota_info.get("resetTime", "")
         desc = ""
         if remaining_fraction < 1.0 and remaining_percent < 100 and reset_time:
@@ -209,6 +212,8 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                     w_window = b.get("window")
                     w_fraction = b.get("remainingFraction", 1.0)
                     w_percent = int(round(w_fraction * 100))
+                    if w_fraction < 1.0 and w_percent >= 100:
+                        w_percent = 99
                     w_reset = b.get("resetTime", "")
                     w_desc = b.get("description", "")
                     if not w_desc and w_fraction < 1.0 and w_percent < 100 and w_reset:
@@ -264,6 +269,8 @@ def parse_quota_data(load_assist_data, quota_summary_data, models_data=None):
                 display_name = bucket.get("displayName", window)
                 remaining_fraction = bucket.get("remainingFraction", 1.0)
                 remaining_percent = int(round(remaining_fraction * 100))
+                if remaining_fraction < 1.0 and remaining_percent >= 100:
+                    remaining_percent = 99
                 reset_time = bucket.get("resetTime", "")
                 desc = bucket.get("description", "")
                 if remaining_fraction >= 1.0 or remaining_percent >= 100:
@@ -448,7 +455,7 @@ def main():
         print("Запрос fetchAvailableModels...")
         models = query_google_api(access_token, "fetchAvailableModels")
 
-        project_id = (load_assist or {}).get("cloudaicompanionProject", "aicode-consumers")
+        project_id = (load_assist or {}).get("cloudaicompanionProject") or "aicode-consumers"
         print("Запрос retrieveUserQuotaSummary...")
         quota_summary = query_google_api(access_token, "retrieveUserQuotaSummary", payload={"project": project_id})
         has_gemini_group = any("gemini" in g.get("displayName", "").lower() for g in (quota_summary or {}).get("groups", []))
